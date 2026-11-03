@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type ReactNode, useMemo, useState } from "react";
 import { useActions, useAppData, useFormat, useMode, useSignOut, useSummary, useHasCurrentPlan } from "@/lib/data/context";
 import { useDemoStore } from "@/lib/data/demo";
@@ -26,6 +27,7 @@ export function SettingsView() {
       {hasPlan ? <PlanForm /> : <NoPlan />}
       {mode === "cloud" && <ConnectClaude />}
       <Account />
+      <DangerZone />
     </div>
   );
 }
@@ -286,6 +288,74 @@ function Account() {
         </p>
       )}
     </Section>
+  );
+}
+
+const RESET_WORD = "RESET";
+
+/** Start fresh: wipes money data, keeps the account, profile and connected apps, then reopens onboarding. */
+function DangerZone() {
+  const { resetAll } = useActions();
+  const mode = useMode();
+  const router = useRouter();
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function reset(e: React.FormEvent) {
+    e.preventDefault();
+    if (typed.trim().toUpperCase() !== RESET_WORD) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await resetAll();
+      router.push("/");
+    } catch (err) {
+      console.error("Reset failed", err);
+      setError("Couldn't finish the reset. Some data may remain; try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="danger" className="space-y-4 rounded-[20px] border border-bad/30 p-5">
+      <div>
+        <h2 id="danger" className="text-[15px] font-medium text-bad">
+          Start fresh
+        </h2>
+        <p className="mt-1 text-sm leading-relaxed text-muted">
+          Deletes every transaction, envelope, bill, month plan, merchant memory and reconcile check
+          {mode === "cloud" ? " from your account" : " in this browser"}. Your {mode === "cloud" ? "login, " : ""}profile
+          {mode === "cloud" ? " and connected apps stay" : " stays"}. This can&apos;t be undone.
+        </p>
+      </div>
+      <form onSubmit={reset} className="flex flex-col gap-2 sm:flex-row">
+        <label className="sr-only" htmlFor="reset-confirm">
+          Type {RESET_WORD} to confirm
+        </label>
+        <input
+          id="reset-confirm"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder={`Type ${RESET_WORD} to confirm`}
+          autoComplete="off"
+          autoCapitalize="characters"
+          className="field"
+        />
+        <button
+          type="submit"
+          disabled={busy || typed.trim().toUpperCase() !== RESET_WORD}
+          className="btn shrink-0 bg-bad text-bg"
+        >
+          {busy ? "Resetting…" : "Reset everything"}
+        </button>
+      </form>
+      {error && (
+        <p role="alert" className="text-sm text-bad">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 
