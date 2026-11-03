@@ -3,7 +3,7 @@ import { INSTRUCTIONS, registerTools } from "@/lib/mcp/tools";
 import { verifyAccessToken } from "@/lib/supabase/token";
 
 const handler = createMcpHandler(registerTools, {
-  serverInfo: { name: "spency", version: "0.3.0" },
+  serverInfo: { name: "spency", version: "0.2.0" },
   instructions: INSTRUCTIONS,
 });
 

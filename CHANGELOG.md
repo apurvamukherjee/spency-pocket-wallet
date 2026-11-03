@@ -4,11 +4,15 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-03
+
 ### Added
 - Rebalance suggestions: when one envelope is over three weeks running and another stays under, Spency offers to move money between them in one tap.
 - Recent activity on Home; tap a payment to edit or remove it.
 - Settings → Start fresh: a typed-confirmation hard reset that keeps your account, profile and connected apps.
 - Empty state for Bills, and deployment notes for Vercel in the README.
+- Row level security tests: every migration runs in an in-process Postgres in CI, checking that no user can read or change another's data.
+- Demo GIF, live demo link and a clearer one-line description in the README.
 
 ### Fixed
 - Email confirmation and password reset links failed as "expired" when opened in another browser or pre-opened by a mail scanner. Links now work on any device and are only used when you press Continue; failures explain why and offer a resend.
@@ -36,3 +40,6 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 - Safe to spend today, projected month-end vs target, bonus saved.
 - Home, Inbox (swipe to confirm, duplicates flagged), Envelopes, Bills, Reconcile, Settings and onboarding on local demo data.
 - Merchant memory, cash withdrawals as transfers, daily reconciliation with streaks.
+
+[Unreleased]: https://github.com/apurvamukherjee/spency-pocket-wallet/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/apurvamukherjee/spency-pocket-wallet/releases/tag/v0.2.0
