@@ -1,20 +1,16 @@
 "use client";
 
 import { useMemo } from "react";
-import { todayIST } from "@/lib/engine/dates";
+import { useActions, useAppData, useFormat, useToday } from "@/lib/data/context";
 import { findDuplicate } from "@/lib/engine/inbox";
-import { formatINR } from "@/lib/engine/money";
 import type { Envelope, Txn } from "@/lib/engine/types";
-import { formatWhen } from "@/lib/format";
-import { useData } from "@/lib/hooks";
-import { useSpency } from "@/lib/store";
 import { useUI } from "@/lib/ui";
 import { Icon } from "@/components/ui/Icon";
 import { categoryName } from "./CategoryPicker";
 import { SwipeCard } from "./SwipeCard";
 
 function usePending() {
-  const { txns } = useData();
+  const { txns } = useAppData();
   return useMemo(() => {
     const pending = txns.filter((t) => t.status === "pending").sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
     return pending.map((t) => ({ txn: t, duplicateOf: findDuplicate(t, txns) }));
@@ -48,15 +44,15 @@ export function InboxPanel() {
 
 function InboxList() {
   const items = usePending();
-  const { envelopes } = useData();
-  const setStatus = useSpency((s) => s.setStatus);
-  const today = todayIST();
+  const { envelopes } = useAppData();
+  const { setStatus } = useActions();
+  const today = useToday();
 
   if (items.length === 0) {
     return (
       <div className="rounded-[20px] border border-dashed border-line px-6 py-10 text-center">
         <p className="text-[15px]">All caught up</p>
-        <p className="mx-auto mt-1.5 max-w-64 text-sm text-muted">Share a UPI screenshot with Claude and it will appear here for you to confirm.</p>
+        <p className="mx-auto mt-1.5 max-w-64 text-sm text-muted">Share a payment screenshot with Claude and it will appear here for you to confirm.</p>
       </div>
     );
   }
@@ -88,14 +84,15 @@ function InboxList() {
 
 function TxnCard({ txn, duplicateOf, envelopes, today }: { txn: Txn; duplicateOf?: Txn; envelopes: Envelope[]; today: string }) {
   const edit = useUI((s) => s.edit);
+  const fmt = useFormat();
   return (
     <button type="button" onClick={() => edit(txn.id)} className="card block w-full p-4 text-left transition-colors hover:border-faint">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-[15px] font-medium">{txn.merchant}</p>
-          <p className="mt-0.5 text-[13px] text-muted">{formatWhen(txn.occurredAt, today)}</p>
+          <p className="mt-0.5 text-[13px] text-muted">{fmt.when(txn.occurredAt, today)}</p>
         </div>
-        <p className="text-[17px] font-medium tabular-nums">{formatINR(txn.amount)}</p>
+        <p className="text-[17px] font-medium tabular-nums">{fmt.money(txn.amount)}</p>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <span className="rounded-full bg-raised px-2.5 py-1 text-muted">{categoryName(envelopes, txn.envelopeId)}</span>
@@ -109,8 +106,8 @@ function TxnCard({ txn, duplicateOf, envelopes, today }: { txn: Txn; duplicateOf
       </div>
       {duplicateOf && (
         <p className="mt-3 rounded-xl bg-warn/10 px-3 py-2 text-[13px] text-warn">
-          Matches a {formatINR(duplicateOf.amount)} payment from {formatWhen(duplicateOf.occurredAt, today)}
-          {duplicateOf.upiRef && duplicateOf.upiRef === txn.upiRef ? " with the same UPI ref" : ""}. Probably a duplicate.
+          Matches a {fmt.money(duplicateOf.amount)} payment from {fmt.when(duplicateOf.occurredAt, today)}
+          {duplicateOf.upiRef && duplicateOf.upiRef === txn.upiRef ? " with the same reference" : ""}. Probably a duplicate.
         </p>
       )}
     </button>

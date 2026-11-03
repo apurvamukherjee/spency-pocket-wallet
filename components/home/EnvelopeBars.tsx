@@ -1,14 +1,14 @@
-import { formatINR } from "@/lib/engine/money";
+import type { FormatMoney } from "@/lib/engine/money";
 import { coverLine, type Settlement } from "@/lib/engine/settle";
 import { Icon } from "@/components/ui/Icon";
 
-export function EnvelopeBars({ settlement }: { settlement: Settlement }) {
+export function EnvelopeBars({ settlement, money }: { settlement: Settlement; money: FormatMoney }) {
   return (
     <ul className="space-y-5">
       {settlement.envelopes.map((e) => {
         const over = e.variance < 0;
         const pct = e.limit > 0 ? Math.min(100, (e.spent / e.limit) * 100) : over ? 100 : 0;
-        const line = coverLine(settlement, e.id);
+        const line = coverLine(settlement, e.id, money);
         const tone = !over ? "bg-accent" : e.hitTarget > 0 ? "bg-bad" : e.fromFlex > 0 ? "bg-warn" : "bg-ok";
         return (
           <li key={e.id}>
@@ -19,10 +19,10 @@ export function EnvelopeBars({ settlement }: { settlement: Settlement }) {
               </span>
               <span className="text-sm text-muted tabular-nums">
                 {over ? (
-                  <span className="text-fg">{formatINR(-e.variance)} over</span>
+                  <span className="text-fg">{money(-e.variance)} over</span>
                 ) : (
                   <>
-                    <span className="text-fg">{formatINR(e.variance)}</span> left of {formatINR(e.limit)}
+                    <span className="text-fg">{money(e.variance)}</span> left of {money(e.limit)}
                   </>
                 )}
               </span>

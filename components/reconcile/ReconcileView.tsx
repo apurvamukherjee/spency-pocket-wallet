@@ -1,12 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useActions, useAppData, useFormat, useSummary } from "@/lib/data/context";
 import { addDays } from "@/lib/engine/dates";
-import { formatINR, parseRupees } from "@/lib/engine/money";
 import { type ReconcileCheck, reconcileGap, reconcileStreak } from "@/lib/engine/reconcile";
-import { formatDay } from "@/lib/format";
-import { useSummary } from "@/lib/hooks";
-import { useSpency } from "@/lib/store";
 import { Icon } from "@/components/ui/Icon";
 
 type Result = { actual: number; gap: number; done: ReconcileCheck["resolution"] | null };
@@ -19,9 +16,9 @@ const RESOLUTION_LABEL: Record<ReconcileCheck["resolution"], string> = {
 
 export function ReconcileView() {
   const s = useSummary();
-  const checks = useSpency((st) => st.checks);
-  const recordCheck = useSpency((st) => st.recordCheck);
-  const addTxn = useSpency((st) => st.addTxn);
+  const { checks } = useAppData();
+  const { recordCheck, addTxn } = useActions();
+  const fmt = useFormat();
   const [text, setText] = useState("");
   const [result, setResult] = useState<Result | null>(null);
   const [copied, setCopied] = useState(false);
@@ -36,7 +33,7 @@ export function ReconcileView() {
 
   function check(e: React.FormEvent) {
     e.preventDefault();
-    const actual = parseRupees(text);
+    const actual = fmt.parse(text);
     if (actual === null) return;
     const r: Result = { actual, gap: reconcileGap(s.bank, actual), done: null };
     setCopied(false);
@@ -58,7 +55,7 @@ export function ReconcileView() {
   }
 
   async function askClaude(r: Result) {
-    const prompt = `My Spency bank balance is ${formatINR(Math.abs(r.gap))} ${r.gap < 0 ? "higher" : "lower"} than my real bank balance. Can you help me find the payment I haven't logged? I'll share my recent UPI screenshots.`;
+    const prompt = `My Spency bank balance is ${fmt.money(Math.abs(r.gap))} ${r.gap < 0 ? "higher" : "lower"} than my real bank balance. Can you help me find the payment I haven't logged? I'll share my recent payment screenshots.`;
     await navigator.clipboard.writeText(prompt);
     setCopied(true);
   }
@@ -74,11 +71,11 @@ export function ReconcileView() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-muted">Spency&apos;s bank balance</p>
-            <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums">{formatINR(s.bank)}</p>
+            <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums">{fmt.money(s.bank)}</p>
           </div>
           <div>
             <p className="text-sm text-muted">Cash in hand</p>
-            <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums">{formatINR(s.cash)}</p>
+            <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums">{fmt.money(s.cash)}</p>
           </div>
         </div>
 
@@ -91,14 +88,14 @@ export function ReconcileView() {
               id="actual"
               className="field tabular-nums"
               inputMode="decimal"
-              placeholder="₹"
+              placeholder={fmt.symbol}
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
                 setResult(null);
               }}
             />
-            <button type="submit" disabled={parseRupees(text) === null} className="btn btn-primary shrink-0">
+            <button type="submit" disabled={fmt.parse(text) === null} className="btn btn-primary shrink-0">
               Check
             </button>
           </div>
@@ -114,7 +111,7 @@ export function ReconcileView() {
             ) : (
               <>
                 <p className="text-xl font-medium tabular-nums">
-                  {formatINR(Math.abs(result.gap))} {result.gap < 0 ? "unaccounted" : "more than expected"}
+                  {fmt.money(Math.abs(result.gap))} {result.gap < 0 ? "unaccounted" : "more than expected"}
                 </p>
                 <p className="mt-1 text-sm text-muted">
                   {result.gap < 0
@@ -154,7 +151,7 @@ export function ReconcileView() {
           {last7.map((d) => (
             <li key={d} className="text-center">
               <div className={`mx-auto size-8 rounded-full ${checkedDays.has(d) ? "bg-accent" : "border border-line"}`} />
-              <span className="mt-1.5 block text-[11px] text-faint">{formatDay(d).slice(0, 2)}</span>
+              <span className="mt-1.5 block text-[11px] text-faint">{fmt.weekdayInitial(d)}</span>
             </li>
           ))}
         </ol>
@@ -165,9 +162,9 @@ export function ReconcileView() {
               .slice(0, 7)
               .map((c) => (
                 <li key={c.date} className="flex justify-between py-3">
-                  <span className="text-muted">{formatDay(c.date)}</span>
+                  <span className="text-muted">{fmt.day(c.date)}</span>
                   <span className="tabular-nums">
-                    {c.actual === c.computed ? RESOLUTION_LABEL.matched : `${formatINR(c.actual - c.computed, { signed: true })} · ${RESOLUTION_LABEL[c.resolution].toLowerCase()}`}
+                    {c.actual === c.computed ? RESOLUTION_LABEL.matched : `${fmt.money(c.actual - c.computed, { signed: true })} · ${RESOLUTION_LABEL[c.resolution].toLowerCase()}`}
                   </span>
                 </li>
               ))}

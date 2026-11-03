@@ -1,19 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { formatINR, parseRupees, rupees } from "@/lib/engine/money";
+import { useActions, useData, useFormat, useSummary } from "@/lib/data/context";
+import { major, unitOf } from "@/lib/engine/money";
 import { describeSettlement } from "@/lib/engine/settle";
 import type { Envelope, LeftoverRule } from "@/lib/engine/types";
-import { formatShortDay } from "@/lib/format";
-import { useData, useSummary } from "@/lib/hooks";
-import { useSpency } from "@/lib/store";
 import { Icon } from "@/components/ui/Icon";
 import { Segmented, StatusChip, Switch } from "@/components/ui/controls";
 
 export function EnvelopesView() {
-  const { envelopes } = useData();
+  const { envelopes, plan } = useData();
   const s = useSummary();
-  const saveEnvelope = useSpency((st) => st.saveEnvelope);
+  const fmt = useFormat();
+  const { saveEnvelope } = useActions();
   const weekly = envelopes.reduce((sum, e) => sum + e.weeklyLimit, 0);
 
   return (
@@ -21,7 +20,7 @@ export function EnvelopesView() {
       <header>
         <h1 className="text-2xl font-medium tracking-tight">Envelopes</h1>
         <p className="mt-1 text-sm text-muted">
-          {formatINR(weekly)} a week across {envelopes.length} {envelopes.length === 1 ? "envelope" : "envelopes"}. Savings in unlocked
+          {fmt.money(weekly)} a week across {envelopes.length} {envelopes.length === 1 ? "envelope" : "envelopes"}. Savings in unlocked
           envelopes cover overspends elsewhere.
         </p>
       </header>
@@ -33,7 +32,7 @@ export function EnvelopesView() {
         <button
           type="button"
           onClick={() =>
-            saveEnvelope({ id: crypto.randomUUID(), name: "New envelope", weeklyLimit: rupees(500), locked: false, leftover: "rollover" })
+            saveEnvelope({ id: crypto.randomUUID(), name: "New envelope", weeklyLimit: major(50, unitOf(plan.currency)), locked: false, leftover: "rollover" })
           }
           className="btn btn-ghost w-full"
         >
@@ -51,18 +50,18 @@ export function EnvelopesView() {
             <li key={w.start} className="card p-5">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm text-muted">
-                  {formatShortDay(w.start)} – {formatShortDay(w.end)}
+                  {fmt.shortDay(w.start)} – {fmt.shortDay(w.end)}
                 </p>
                 {w.final ? <StatusChip status={w.settlement.status} /> : <span className="text-xs text-faint">In progress</span>}
               </div>
               <p className="mt-3 text-[15px] leading-relaxed">
-                {describeSettlement(w.settlement, { live: !w.final, target: s.target, projected: s.projected })}
+                {describeSettlement(w.settlement, { live: !w.final, target: s.target, projected: s.projected, fmt: fmt.money })}
               </p>
               <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
                 {w.settlement.envelopes.map((e) => (
                   <li key={e.id} className="flex justify-between gap-2">
                     <span className="truncate text-muted">{e.name}</span>
-                    <span className={`tabular-nums ${e.variance < 0 ? "text-warn" : ""}`}>{formatINR(e.variance, { signed: true })}</span>
+                    <span className={`tabular-nums ${e.variance < 0 ? "text-warn" : ""}`}>{fmt.money(e.variance, { signed: true })}</span>
                   </li>
                 ))}
               </ul>
@@ -81,10 +80,10 @@ const RULES: { value: LeftoverRule; label: string }[] = [
 ];
 
 function EnvelopeEditor({ envelope }: { envelope: Envelope }) {
-  const saveEnvelope = useSpency((s) => s.saveEnvelope);
-  const deleteEnvelope = useSpency((s) => s.deleteEnvelope);
+  const { saveEnvelope, deleteEnvelope } = useActions();
+  const fmt = useFormat();
   const [name, setName] = useState(envelope.name);
-  const [limit, setLimit] = useState(String(envelope.weeklyLimit / 100));
+  const [limit, setLimit] = useState(fmt.input(envelope.weeklyLimit));
   const save = (patch: Partial<Envelope>) => saveEnvelope({ ...envelope, ...patch });
 
   return (
@@ -98,7 +97,7 @@ function EnvelopeEditor({ envelope }: { envelope: Envelope }) {
           onBlur={() => (name.trim() ? save({ name: name.trim() }) : setName(envelope.name))}
         />
         <label className="flex items-center gap-1 rounded-xl bg-raised px-3 py-1.5 text-sm focus-within:ring-1 focus-within:ring-accent/60">
-          <span className="text-faint">₹</span>
+          <span className="text-faint">{fmt.symbol}</span>
           <input
             aria-label={`${envelope.name} weekly limit`}
             inputMode="decimal"
@@ -106,8 +105,8 @@ function EnvelopeEditor({ envelope }: { envelope: Envelope }) {
             value={limit}
             onChange={(e) => setLimit(e.target.value)}
             onBlur={() => {
-              const p = parseRupees(limit);
-              if (p === null) setLimit(String(envelope.weeklyLimit / 100));
+              const p = fmt.parse(limit);
+              if (p === null) setLimit(fmt.input(envelope.weeklyLimit));
               else save({ weeklyLimit: p });
             }}
           />

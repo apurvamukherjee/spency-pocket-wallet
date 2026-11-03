@@ -1,10 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { formatINR, parseRupees } from "@/lib/engine/money";
+import { useActions, useAppData, useFormat } from "@/lib/data/context";
 import type { Txn, Wallet } from "@/lib/engine/types";
-import { useData } from "@/lib/hooks";
-import { useSpency } from "@/lib/store";
 import { useUI } from "@/lib/ui";
 import { Segmented } from "@/components/ui/controls";
 import { Sheet } from "@/components/ui/Sheet";
@@ -13,7 +11,7 @@ import { CategoryPicker } from "./CategoryPicker";
 export function EditTxnSheet() {
   const id = useUI((s) => s.editing);
   const edit = useUI((s) => s.edit);
-  const txn = useData().txns.find((t) => t.id === id);
+  const txn = useAppData().txns.find((t) => t.id === id);
   return (
     <Sheet open={!!txn} onClose={() => edit(null)} title={txn?.status === "pending" ? "Review payment" : "Edit payment"}>
       {txn && <EditForm key={txn.id} txn={txn} onDone={() => edit(null)} />}
@@ -22,15 +20,15 @@ export function EditTxnSheet() {
 }
 
 function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
-  const { envelopes } = useData();
-  const updateTxn = useSpency((s) => s.updateTxn);
-  const setStatus = useSpency((s) => s.setStatus);
+  const { envelopes } = useAppData();
+  const { updateTxn, setStatus } = useActions();
+  const fmt = useFormat();
 
-  const [amountText, setAmountText] = useState(String(txn.amount / 100));
+  const [amountText, setAmountText] = useState(fmt.input(txn.amount));
   const [merchant, setMerchant] = useState(txn.merchant);
   const [envelopeId, setEnvelopeId] = useState(txn.envelopeId);
   const [wallet, setWallet] = useState<Wallet>(txn.wallet);
-  const amount = parseRupees(amountText);
+  const amount = fmt.parse(amountText);
   const pending = txn.status === "pending";
 
   function save(status?: Txn["status"]) {
@@ -54,7 +52,7 @@ function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
           <input className="field" value={merchant} onChange={(e) => setMerchant(e.target.value)} />
         </label>
         <label className="space-y-1.5">
-          <span className="label">Amount (₹)</span>
+          <span className="label">Amount</span>
           <input className="field tabular-nums" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} />
         </label>
       </div>
@@ -70,11 +68,11 @@ function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
         value={wallet}
         onChange={setWallet}
         options={[
-          { value: "bank", label: "Bank / UPI" },
+          { value: "bank", label: "Bank / card" },
           { value: "cash", label: "Cash" },
         ]}
       />
-      {txn.upiRef && <p className="text-xs text-faint">UPI ref {txn.upiRef}</p>}
+      {txn.upiRef && <p className="text-xs text-faint">Reference {txn.upiRef}</p>}
       <div className="flex gap-3">
         {pending ? (
           <>
@@ -82,7 +80,7 @@ function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
               Dismiss
             </button>
             <button type="submit" disabled={!amount} className="btn btn-primary flex-[2]">
-              Confirm {amount ? formatINR(amount) : ""}
+              Confirm {amount ? fmt.money(amount) : ""}
             </button>
           </>
         ) : (

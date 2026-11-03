@@ -1,5 +1,5 @@
 import { diffDays } from "@/lib/engine/dates";
-import type { ISODate, Paise } from "@/lib/engine/types";
+import type { ISODate, Minor } from "@/lib/engine/types";
 
 const W = 320;
 const H = 96;
@@ -12,11 +12,11 @@ export function ProjectionChart({
   projected,
   target,
 }: {
-  series: { date: ISODate; balance: Paise }[];
+  series: { date: ISODate; balance: Minor }[];
   monthStart: ISODate;
   monthEnd: ISODate;
-  projected: Paise;
-  target: Paise;
+  projected: Minor;
+  target: Minor;
 }) {
   const span = Math.max(1, diffDays(monthStart, monthEnd));
   const values = [...series.map((p) => p.balance), projected, target];
@@ -24,7 +24,7 @@ export function ProjectionChart({
   const hi = Math.max(...values);
   const pad = (hi - lo) * 0.12 || 1;
   const x = (d: ISODate) => (diffDays(monthStart, d) / span) * W;
-  const y = (v: Paise) => H - ((v - lo + pad) / (hi - lo + 2 * pad)) * H;
+  const y = (v: Minor) => H - ((v - lo + pad) / (hi - lo + 2 * pad)) * H;
 
   const last = series.at(-1);
   const line = series.map((p, i) => `${i ? "L" : "M"}${x(p.date).toFixed(1)},${y(p.balance).toFixed(1)}`).join("");

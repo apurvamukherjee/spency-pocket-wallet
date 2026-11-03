@@ -1,11 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useActions, useAppData, useFormat } from "@/lib/data/context";
 import { recallEnvelope } from "@/lib/engine/inbox";
-import { formatINR, parseRupees } from "@/lib/engine/money";
 import type { Wallet } from "@/lib/engine/types";
-import { useData } from "@/lib/hooks";
-import { useSpency } from "@/lib/store";
 import { useUI } from "@/lib/ui";
 import { CategoryPicker } from "@/components/inbox/CategoryPicker";
 import { Segmented } from "@/components/ui/controls";
@@ -24,9 +22,9 @@ export function QuickAdd() {
 type Kind = "spend" | "withdraw";
 
 function QuickAddForm({ onDone }: { onDone: () => void }) {
-  const { envelopes } = useData();
-  const memory = useSpency((s) => s.memory);
-  const addTxn = useSpency((s) => s.addTxn);
+  const { envelopes, memory } = useAppData();
+  const { addTxn } = useActions();
+  const fmt = useFormat();
 
   const [kind, setKind] = useState<Kind>("spend");
   const [amountText, setAmountText] = useState("");
@@ -34,7 +32,7 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
   const [wallet, setWallet] = useState<Wallet>("bank");
   const [picked, setPicked] = useState<{ id: string | null } | null>(null);
 
-  const amount = parseRupees(amountText);
+  const amount = fmt.parse(amountText);
   const remembered = recallEnvelope(memory, merchant);
   const envelopeId = picked ? picked.id : (remembered ?? null);
 
@@ -62,9 +60,9 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
       />
 
       <label className="block">
-        <span className="sr-only">Amount in rupees</span>
+        <span className="sr-only">Amount</span>
         <div className="flex items-baseline gap-1 border-b border-line pb-2 focus-within:border-accent/60">
-          <span className="text-3xl text-faint">₹</span>
+          <span className="text-3xl text-faint">{fmt.symbol}</span>
           <input
             autoFocus
             inputMode="decimal"
@@ -85,7 +83,7 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
             value={wallet}
             onChange={setWallet}
             options={[
-              { value: "bank", label: "Bank / UPI" },
+              { value: "bank", label: "Bank / card" },
               { value: "cash", label: "Cash" },
             ]}
           />
@@ -95,7 +93,7 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
       )}
 
       <button type="submit" disabled={!amount} className="btn btn-primary w-full py-3">
-        {amount ? `Add ${formatINR(amount)}` : "Add"}
+        {amount ? `Add ${fmt.money(amount)}` : "Add"}
       </button>
     </form>
   );

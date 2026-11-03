@@ -2,12 +2,9 @@
 
 import { useState } from "react";
 import { addDays, diffDays } from "@/lib/engine/dates";
-import { formatINR, parseRupees } from "@/lib/engine/money";
+import { useActions, useData, useFormat, useSummary } from "@/lib/data/context";
 import { commitmentDates } from "@/lib/engine/plan";
 import type { Commitment, Frequency, ISODate } from "@/lib/engine/types";
-import { formatShortDay } from "@/lib/format";
-import { useData, useSummary } from "@/lib/hooks";
-import { useSpency } from "@/lib/store";
 import { Icon } from "@/components/ui/Icon";
 import { Segmented } from "@/components/ui/controls";
 import { Sheet } from "@/components/ui/Sheet";
@@ -19,6 +16,7 @@ const FREQ_LABEL: Record<Frequency, string> = { weekly: "Weekly", monthly: "Mont
 export function CommitmentsView() {
   const { commitments } = useData();
   const s = useSummary();
+  const fmt = useFormat();
   const [editing, setEditing] = useState<Commitment | "new" | null>(null);
   const rows = commitments
     .map((c) => ({ c, next: nextDate(c, s.today) }))
@@ -34,11 +32,11 @@ export function CommitmentsView() {
       <section className="card grid grid-cols-2 gap-4 p-5">
         <div>
           <p className="text-sm text-muted">This month</p>
-          <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums">{formatINR(s.commitmentsTotal)}</p>
+          <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums">{fmt.money(s.commitmentsTotal)}</p>
         </div>
         <div>
           <p className="text-sm text-muted">Still to go</p>
-          <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums">{formatINR(s.commitmentsRemaining)}</p>
+          <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums">{fmt.money(s.commitmentsRemaining)}</p>
         </div>
       </section>
 
@@ -52,11 +50,11 @@ export function CommitmentsView() {
                   <div className="min-w-0">
                     <p className="truncate text-[15px]">{c.name}</p>
                     <p className="mt-0.5 text-[13px] text-muted">
-                      {formatShortDay(next)} · {inDays === 0 ? "today" : inDays === 1 ? "tomorrow" : `in ${inDays} days`} ·{" "}
+                      {fmt.shortDay(next)} · {inDays === 0 ? "today" : inDays === 1 ? "tomorrow" : `in ${inDays} days`} ·{" "}
                       {FREQ_LABEL[c.frequency].toLowerCase()}
                     </p>
                   </div>
-                  <p className="text-[15px] tabular-nums">{formatINR(c.amount)}</p>
+                  <p className="text-[15px] tabular-nums">{fmt.money(c.amount)}</p>
                 </button>
               </li>
             );
@@ -83,13 +81,13 @@ export function CommitmentsView() {
 }
 
 function CommitmentForm({ initial, today, onDone }: { initial: Commitment | null; today: ISODate; onDone: () => void }) {
-  const saveCommitment = useSpency((s) => s.saveCommitment);
-  const deleteCommitment = useSpency((s) => s.deleteCommitment);
+  const { saveCommitment, deleteCommitment } = useActions();
+  const fmt = useFormat();
   const [name, setName] = useState(initial?.name ?? "");
-  const [amountText, setAmountText] = useState(initial ? String(initial.amount / 100) : "");
+  const [amountText, setAmountText] = useState(initial ? fmt.input(initial.amount) : "");
   const [frequency, setFrequency] = useState<Frequency>(initial?.frequency ?? "monthly");
   const [date, setDate] = useState(initial ? nextDate(initial, today) : today);
-  const amount = parseRupees(amountText);
+  const amount = fmt.parse(amountText);
   const valid = name.trim() !== "" && amount !== null && amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(date);
 
   return (
@@ -108,7 +106,7 @@ function CommitmentForm({ initial, today, onDone }: { initial: Commitment | null
       </label>
       <div className="grid grid-cols-2 gap-3">
         <label className="space-y-1.5">
-          <span className="label">Amount (₹)</span>
+          <span className="label">Amount</span>
           <input className="field tabular-nums" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} />
         </label>
         <label className="space-y-1.5">
