@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { summarize, type SpencyData, walletBalances } from "./derive";
-import { rupees } from "./money";
+import { major as rupees } from "./money";
 import type { Envelope, Txn } from "./types";
 
 let seq = 0;
@@ -35,6 +35,8 @@ const env = (id: string, weekly: number, over: Partial<Envelope> = {}): Envelope
 const base = (over: Partial<SpencyData> = {}): SpencyData => ({
   plan: {
     month: "2026-11",
+    currency: "INR",
+    timeZone: "Asia/Kolkata",
     openingBank: rupees(80000),
     openingCash: 0,
     balanceAt: "2026-11-01T00:00:00+05:30",
@@ -202,5 +204,29 @@ describe("safe to spend today", () => {
 
   it("the last partial week only counts days in the month", () => {
     expect(summarize(base(), "2026-11-30").daysLeftThisWeek).toBe(1);
+  });
+});
+
+describe("time zones", () => {
+  it("buckets payments into the plan's local day", () => {
+    // 11:30 pm on Mon 2 Nov in Los Angeles is already Tue 3 Nov in UTC.
+    const la = base({
+      plan: { ...base().plan, timeZone: "America/Los_Angeles", currency: "USD", balanceAt: "2026-11-01T00:00:00-07:00" },
+      txns: [txn("2026-11-02", 40, { envelopeId: "Blinkit", occurredAt: "2026-11-03T07:30:00Z" })],
+    });
+    const s = summarize(la, "2026-11-02");
+    expect(s.current.start).toBe("2026-11-02");
+    expect(s.current.settlement.envelopes.find((e) => e.id === "Blinkit")?.spent).toBe(rupees(40));
+  });
+
+  it("rounds to whole yen for JPY plans", () => {
+    const jp = base({
+      plan: { ...base().plan, currency: "JPY", timeZone: "Asia/Tokyo", openingBank: 300000, target: 200000 },
+      envelopes: [env("Konbini", 0, { weeklyLimit: 10000 })],
+      commitments: [],
+    });
+    const s = summarize(jp, "2026-11-03");
+    expect(s.weeks[0].settlement.envelopes[0].limit).toBe(1429);
+    expect(s.projected).toBe(200000);
   });
 });

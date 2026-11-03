@@ -1,5 +1,5 @@
-import { addDays, diffDays, toISTDate } from "./dates";
-import { floorToRupee } from "./money";
+import { addDays, diffDays, toLocalDate } from "./dates";
+import { floorToUnit, unitOf } from "./money";
 import {
   commitmentDates,
   commitmentsInPlan,
@@ -10,8 +10,8 @@ import {
   weekAllocation,
   weeksCovering,
 } from "./plan";
-import { describeSettlement, type Settlement, settleWeek, type SettlementStatus } from "./settle";
-import type { Commitment, Envelope, ISODate, MonthPlan, Paise, Txn } from "./types";
+import { type Settlement, settleWeek, type SettlementStatus } from "./settle";
+import type { Commitment, Envelope, ISODate, MonthPlan, Minor, Txn } from "./types";
 
 export type SpencyData = {
   plan: MonthPlan;
@@ -30,26 +30,25 @@ export type WeekReport = {
 
 export type Summary = {
   today: ISODate;
-  bank: Paise;
-  cash: Paise;
-  target: Paise;
-  spendable: Paise;
-  commitmentsTotal: Paise;
-  commitmentsRemaining: Paise;
-  salaryPending: Paise;
-  flexBudget: Paise;
+  bank: Minor;
+  cash: Minor;
+  target: Minor;
+  spendable: Minor;
+  commitmentsTotal: Minor;
+  commitmentsRemaining: Minor;
+  salaryPending: Minor;
+  flexBudget: Minor;
   /** May go negative when unplanned spends exceed the pool. */
-  flexLeft: Paise;
+  flexLeft: Minor;
   weeks: WeekReport[];
   current: WeekReport;
   /** Envelope money still unspent this week, after cover. */
-  envelopeLeftThisWeek: Paise;
+  envelopeLeftThisWeek: Minor;
   daysLeftThisWeek: number;
-  safeToday: Paise;
-  projected: Paise;
-  bonusSaved: Paise;
+  safeToday: Minor;
+  projected: Minor;
+  bonusSaved: Minor;
   status: SettlementStatus;
-  message: string;
 };
 
 const confirmedAfter = (plan: MonthPlan, t: Txn) =>
@@ -57,13 +56,13 @@ const confirmedAfter = (plan: MonthPlan, t: Txn) =>
 
 const signed = (t: Txn) => (t.direction === "credit" ? t.amount : -t.amount);
 
-const inRange = (t: Txn, from: ISODate, to: ISODate) => {
-  const d = toISTDate(t.occurredAt);
+const inRange = (plan: MonthPlan, t: Txn, from: ISODate, to: ISODate) => {
+  const d = toLocalDate(t.occurredAt, plan.timeZone);
   return d >= from && d <= to;
 };
 
 /** Opening balances + every confirmed txn after balanceAt. Transfers move money between wallets. */
-export function walletBalances(plan: MonthPlan, txns: Txn[]): { bank: Paise; cash: Paise } {
+export function walletBalances(plan: MonthPlan, txns: Txn[]): { bank: Minor; cash: Minor } {
   let bank = plan.openingBank;
   let cash = plan.openingCash;
   for (const t of txns) {
@@ -80,14 +79,14 @@ export function walletBalances(plan: MonthPlan, txns: Txn[]): { bank: Paise; cas
 }
 
 /** Net envelope spend in [from, to]; refunds (credits) reduce it. Both wallets count. */
-export function envelopeSpend(plan: MonthPlan, txns: Txn[], envelopeId: string, from: ISODate, to: ISODate): Paise {
+export function envelopeSpend(plan: MonthPlan, txns: Txn[], envelopeId: string, from: ISODate, to: ISODate): Minor {
   return txns
-    .filter((t) => confirmedAfter(plan, t) && t.kind === "expense" && t.envelopeId === envelopeId && inRange(t, from, to))
+    .filter((t) => confirmedAfter(plan, t) && t.kind === "expense" && t.envelopeId === envelopeId && inRange(plan, t, from, to))
     .reduce((sum, t) => sum - signed(t), 0);
 }
 
 /** Unplanned spends (no envelope, no commitment) and reconciliation adjustments draw on flex. */
-export function flexSpend(plan: MonthPlan, txns: Txn[], from: ISODate, to: ISODate): Paise {
+export function flexSpend(plan: MonthPlan, txns: Txn[], from: ISODate, to: ISODate): Minor {
   return txns
     .filter(
       (t) =>
@@ -95,33 +94,33 @@ export function flexSpend(plan: MonthPlan, txns: Txn[], from: ISODate, to: ISODa
         (t.kind === "expense" || t.kind === "adjustment") &&
         t.envelopeId === null &&
         t.commitmentId === null &&
-        inRange(t, from, to),
+        inRange(plan, t, from, to),
     )
     .reduce((sum, t) => sum - signed(t), 0);
 }
 
-export function commitmentsRemaining(plan: MonthPlan, cs: Commitment[], txns: Txn[]): Paise {
+export function commitmentsRemaining(plan: MonthPlan, cs: Commitment[], txns: Txn[]): Minor {
   const { start, end } = planWindow(plan);
   return cs.reduce((sum, c) => {
     const due = c.amount * commitmentDates(c, start, end).length;
     const paid = txns
-      .filter((t) => confirmedAfter(plan, t) && t.commitmentId === c.id && inRange(t, start, end))
+      .filter((t) => confirmedAfter(plan, t) && t.commitmentId === c.id && inRange(plan, t, start, end))
       .reduce((s, t) => s - signed(t), 0);
     return sum + Math.max(0, due - paid);
   }, 0);
 }
 
 /** End-of-day bank + cash from plan start to `today`, for the month chart. */
-export function balanceSeries(plan: MonthPlan, txns: Txn[], today: ISODate): { date: ISODate; balance: Paise }[] {
+export function balanceSeries(plan: MonthPlan, txns: Txn[], today: ISODate): { date: ISODate; balance: Minor }[] {
   const win = planWindow(plan);
-  const byDay = new Map<ISODate, Paise>();
+  const byDay = new Map<ISODate, Minor>();
   for (const t of txns) {
     if (!confirmedAfter(plan, t) || t.kind === "transfer") continue;
-    const d = toISTDate(t.occurredAt);
+    const d = toLocalDate(t.occurredAt, plan.timeZone);
     byDay.set(d, (byDay.get(d) ?? 0) + signed(t));
   }
   const last = today > win.end ? win.end : today;
-  const out: { date: ISODate; balance: Paise }[] = [];
+  const out: { date: ISODate; balance: Minor }[] = [];
   let balance = plan.openingBank + plan.openingCash;
   for (let d = win.start; d <= last; d = addDays(d, 1)) {
     balance += byDay.get(d) ?? 0;
@@ -141,11 +140,12 @@ export function balanceSeries(plan: MonthPlan, txns: Txn[], today: ISODate): { d
 export function summarize(data: SpencyData, today: ISODate): Summary {
   const { plan, envelopes, commitments, txns } = data;
   const win = planWindow(plan);
+  const unit = unitOf(plan.currency);
   const day = today < win.start ? win.start : today > win.end ? win.end : today;
 
   const flexTotal = flexBudget(plan, envelopes, commitments);
   let flexLeft = flexTotal;
-  let carry: Record<string, Paise> = {};
+  let carry: Record<string, Minor> = {};
   let bonusSaved = 0;
   const weeks: WeekReport[] = [];
 
@@ -161,12 +161,13 @@ export function summarize(data: SpencyData, today: ISODate): Summary {
       envelopes.map((e) => ({
         id: e.id,
         name: e.name,
-        limit: weekAllocation(e.weeklyLimit, start, win.start, win.end) + (carry[e.id] ?? 0),
+        limit: weekAllocation(e.weeklyLimit, start, win.start, win.end, unit) + (carry[e.id] ?? 0),
         spent: envelopeSpend(plan, txns, e.id, from, upTo),
         locked: e.locked,
         leftover: e.leftover,
       })),
       flexLeft,
+      unit,
     );
     flexLeft -= settlement.fromFlex;
     if (final) {
@@ -180,7 +181,7 @@ export function summarize(data: SpencyData, today: ISODate): Summary {
   const current = weeks[weeks.length - 1];
   const envelopeLeftThisWeek = current.settlement.envelopes.reduce((s, e) => s + e.left, 0);
   const futureWeeks = weeksCovering(addDays(current.end, 1), win.end, plan.weekStart).reduce(
-    (sum, w) => sum + envelopes.reduce((s, e) => s + weekAllocation(e.weeklyLimit, w, win.start, win.end), 0),
+    (sum, w) => sum + envelopes.reduce((s, e) => s + weekAllocation(e.weeklyLimit, w, win.start, win.end, unit), 0),
     0,
   );
 
@@ -195,7 +196,7 @@ export function summarize(data: SpencyData, today: ISODate): Summary {
   const daysLeftThisWeek = diffDays(day, weekLastDay) + 1;
   const daysLeftMonth = diffDays(day, win.end) + 1;
   const flexForWeek = Math.floor((Math.max(0, flexLeft) * daysLeftThisWeek) / daysLeftMonth);
-  const safeToday = Math.max(0, floorToRupee(Math.floor((envelopeLeftThisWeek + flexForWeek) / daysLeftThisWeek)));
+  const safeToday = Math.max(0, floorToUnit(Math.floor((envelopeLeftThisWeek + flexForWeek) / daysLeftThisWeek), unit));
 
   return {
     today: day,
@@ -216,6 +217,5 @@ export function summarize(data: SpencyData, today: ISODate): Summary {
     projected,
     bonusSaved,
     status: current.settlement.status,
-    message: describeSettlement(current.settlement, { live: !current.final, target: plan.target, projected }),
   };
 }

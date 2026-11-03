@@ -1,13 +1,13 @@
 import { addDays, monthOf, monthStart } from "./engine/dates";
 import { rememberMerchant, type MerchantMemory } from "./engine/inbox";
-import { rupees } from "./engine/money";
+import { major as rupees } from "./engine/money";
 import { commitmentDates } from "./engine/plan";
 import type { SpencyData } from "./engine/derive";
 import type { Commitment, Envelope, ISODate, Txn } from "./engine/types";
 
 const at = (d: ISODate, hhmm: string) => `${d}T${hhmm}:00+05:30`;
 
-/** A believable month so far, generated relative to `today` so the demo always looks current. Deterministic. */
+/** A believable Indian month so far (INR, Asia/Kolkata), generated relative to `today` so the demo always looks current. Deterministic. */
 export function seedData(today: ISODate): { data: SpencyData; memory: MerchantMemory } {
   const month = monthOf(today);
   const first = monthStart(month);
@@ -91,6 +91,8 @@ export function seedData(today: ISODate): { data: SpencyData; memory: MerchantMe
     data: {
       plan: {
         month,
+        currency: "INR",
+        timeZone: "Asia/Kolkata",
         openingBank: rupees(120000),
         openingCash: rupees(500),
         balanceAt: at(first, "00:00"),

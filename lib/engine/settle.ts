@@ -1,44 +1,44 @@
-import { allocateRupees, formatINR } from "./money";
-import type { LeftoverRule, Paise } from "./types";
+import { allocateWhole, type FormatMoney } from "./money";
+import type { LeftoverRule, Minor } from "./types";
 
 export type EnvelopeWeek = {
   id: string;
   name: string;
   /** Weekly limit including any rollover carried in. */
-  limit: Paise;
-  spent: Paise;
+  limit: Minor;
+  spent: Minor;
   locked: boolean;
   leftover: LeftoverRule;
 };
 
 export type EnvelopeResult = EnvelopeWeek & {
   /** limit − spent; positive = saved, negative = over. */
-  variance: Paise;
+  variance: Minor;
   /** Savings handed to other envelopes. */
-  gave: Paise;
+  gave: Minor;
   /** Overspend absorbed by other envelopes' savings. */
-  coveredBySavings: Paise;
-  fromFlex: Paise;
-  hitTarget: Paise;
+  coveredBySavings: Minor;
+  fromFlex: Minor;
+  hitTarget: Minor;
   /** Savings still unused after cover; what the leftover rule acts on. */
-  left: Paise;
+  left: Minor;
 };
 
-export type Cover = { from: string; to: string; amount: Paise };
+export type Cover = { from: string; to: string; amount: Minor };
 
 export type SettlementStatus = "covered" | "managed" | "target_hit";
 
 export type Settlement = {
   envelopes: EnvelopeResult[];
   covers: Cover[];
-  overspend: Paise;
-  coveredBySavings: Paise;
-  fromFlex: Paise;
-  hitTarget: Paise;
-  toFlex: Paise;
-  toTarget: Paise;
+  overspend: Minor;
+  coveredBySavings: Minor;
+  fromFlex: Minor;
+  hitTarget: Minor;
+  toFlex: Minor;
+  toTarget: Minor;
   /** Next week's extra limit per envelope id. */
-  rollover: Record<string, Paise>;
+  rollover: Record<string, Minor>;
   status: SettlementStatus;
 };
 
@@ -47,20 +47,21 @@ export type Settlement = {
  * Cover is shared proportionally on both sides so no single envelope is drained first.
  * Works the same mid-week: pass spending so far for a live projection.
  */
-export function settleWeek(envs: EnvelopeWeek[], flexAvailable: Paise): Settlement {
+/** `unit` is minor units per major unit; cover is split in whole major units. */
+export function settleWeek(envs: EnvelopeWeek[], flexAvailable: Minor, unit: number): Settlement {
   const variance = envs.map((e) => e.limit - e.spent);
   const overBy = variance.map((v) => Math.max(0, -v));
   const canGive = envs.map((e, i) => (e.locked ? 0 : Math.max(0, variance[i])));
 
   const overspend = overBy.reduce((a, b) => a + b, 0);
   const coveredBySavings = Math.min(overspend, canGive.reduce((a, b) => a + b, 0));
-  const gave = allocateRupees(coveredBySavings, canGive);
-  const received = allocateRupees(coveredBySavings, overBy);
+  const gave = allocateWhole(coveredBySavings, canGive, unit);
+  const received = allocateWhole(coveredBySavings, overBy, unit);
 
   const residual = overBy.map((o, i) => o - received[i]);
   const remaining = overspend - coveredBySavings;
   const fromFlex = Math.min(remaining, Math.max(0, flexAvailable));
-  const flexShare = allocateRupees(fromFlex, residual);
+  const flexShare = allocateWhole(fromFlex, residual, unit);
   const targetShare = residual.map((r, i) => r - flexShare[i]);
 
   const envelopes: EnvelopeResult[] = envs.map((e, i) => ({
@@ -75,7 +76,7 @@ export function settleWeek(envs: EnvelopeWeek[], flexAvailable: Paise): Settleme
 
   let toFlex = 0;
   let toTarget = 0;
-  const rollover: Record<string, Paise> = {};
+  const rollover: Record<string, Minor> = {};
   for (const e of envelopes) {
     if (e.left <= 0) continue;
     if (e.leftover === "rollover") rollover[e.id] = e.left;
@@ -119,7 +120,7 @@ export function joinNames(names: string[]): string {
 }
 
 /** One line under an over-budget envelope, e.g. "Covered by Blinkit savings". */
-export function coverLine(s: Settlement, envelopeId: string): string | null {
+export function coverLine(s: Settlement, envelopeId: string, fmt: FormatMoney): string | null {
   const e = s.envelopes.find((x) => x.id === envelopeId);
   if (!e || e.variance >= 0) return null;
   const donors = s.covers
@@ -128,23 +129,24 @@ export function coverLine(s: Settlement, envelopeId: string): string | null {
   const parts: string[] = [];
   if (e.coveredBySavings > 0) {
     const by = `${joinNames(donors)} savings`;
-    parts.push(e.fromFlex + e.hitTarget === 0 ? `Covered by ${by}` : `${formatINR(e.coveredBySavings)} covered by ${by}`);
+    parts.push(e.fromFlex + e.hitTarget === 0 ? `Covered by ${by}` : `${fmt(e.coveredBySavings)} covered by ${by}`);
   }
-  if (e.fromFlex > 0) parts.push(`${formatINR(e.fromFlex)} from flex`);
-  if (e.hitTarget > 0) parts.push(`${formatINR(e.hitTarget)} from your month-end`);
+  if (e.fromFlex > 0) parts.push(`${fmt(e.fromFlex)} from flex`);
+  if (e.hitTarget > 0) parts.push(`${fmt(e.hitTarget)} from your month-end`);
   return parts.join(" · ");
 }
 
 /** Warm, honest summary. `live` phrases it as "so far this week". */
 export function describeSettlement(
   s: Settlement,
-  ctx: { live: boolean; target: Paise; projected: Paise },
+  ctx: { live: boolean; target: Minor; projected: Minor; fmt: FormatMoney },
 ): string {
+  const { fmt } = ctx;
   const overs = s.envelopes.filter((e) => e.variance < 0);
   const tail =
     ctx.projected >= ctx.target
-      ? ` You're still on track for ${formatINR(ctx.target)}.`
-      : ` You're heading for ${formatINR(ctx.projected)} — a lighter few days will close the gap.`;
+      ? ` You're still on track for ${fmt(ctx.target)}.`
+      : ` You're heading for ${fmt(ctx.projected)} — a lighter few days will close the gap.`;
 
   if (overs.length === 0) {
     return (ctx.live ? "Everything is within budget so far this week." : "Every envelope stayed within budget this week.") + tail;
@@ -152,8 +154,8 @@ export function describeSettlement(
 
   const head =
     overs.length === 1
-      ? `You went ${formatINR(-overs[0].variance)} over on ${overs[0].name}`
-      : `You went ${formatINR(s.overspend)} over across ${joinNames(overs.map((e) => e.name))}`;
+      ? `You went ${fmt(-overs[0].variance)} over on ${overs[0].name}`
+      : `You went ${fmt(s.overspend)} over across ${joinNames(overs.map((e) => e.name))}`;
   const donors = joinNames(s.envelopes.filter((e) => e.gave > 0).map((e) => e.name));
   const soFar = ctx.live ? " so far" : "";
 
@@ -161,12 +163,12 @@ export function describeSettlement(
   if (s.coveredBySavings === s.overspend) {
     text = `${head}${soFar}, and all of it was covered because you spent less on ${donors}.`;
   } else if (s.coveredBySavings > 0) {
-    text = `${head}${soFar}, but ${formatINR(s.coveredBySavings)} was covered because you spent less on ${donors}.`;
-    if (s.fromFlex > 0) text += ` Only ${formatINR(s.fromFlex)} came from flex.`;
+    text = `${head}${soFar}, but ${fmt(s.coveredBySavings)} was covered because you spent less on ${donors}.`;
+    if (s.fromFlex > 0) text += ` Only ${fmt(s.fromFlex)} came from flex.`;
   } else {
     text = `${head}${soFar}.`;
-    if (s.fromFlex > 0) text += ` Flex covered ${s.hitTarget === 0 ? "it" : formatINR(s.fromFlex)}.`;
+    if (s.fromFlex > 0) text += ` Flex covered ${s.hitTarget === 0 ? "it" : fmt(s.fromFlex)}.`;
   }
-  if (s.hitTarget > 0) text += ` ${formatINR(s.hitTarget)} comes out of your month-end balance.`;
+  if (s.hitTarget > 0) text += ` ${fmt(s.hitTarget)} comes out of your month-end balance.`;
   return text + tail;
 }
