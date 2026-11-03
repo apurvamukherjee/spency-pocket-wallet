@@ -5,6 +5,9 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 ## [Unreleased]
 
 ### Added
+- File a payment under a bill from the Inbox, quick add or edit sheet; it counts as paying that bill this month. Claude does the same when the merchant or its suggestion matches a bill.
+- Settings → Sorting: choose where unsorted payments go (default Small stuff). Payments are no longer filed under Flex unless you pick it; Claude's Flex suggestions are ignored. Needs the `default_envelope_id` migration.
+- `set_bill_paid` for Claude: "Netflix hasn't gone out yet" sets the money aside again; "rent is paid" logs a pending payment for you to confirm.
 - Bills: tick a bill to mark it paid this month (logs the payment so balances stay right), untick to undo, or untick a bill Spency assumed was paid to say it hasn't gone out yet (the money is set aside again). Needs the new `unpaid_bills` migration.
 - Claude can correct the past: `update_transaction`, `remove_transaction`, `update_commitment`, `remove_commitment`, `remove_envelope` and `update_plan`. Payments dated before the plan's starting balance are flagged so Claude can explain they don't change balances. Confirming new payments stays in the app.
 

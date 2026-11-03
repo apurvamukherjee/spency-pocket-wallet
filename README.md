@@ -28,7 +28,8 @@ You tell Spency your balance today and the balance you want at month-end. It set
 - **Projected month-end** against your target, updated with every payment.
 - **Inbox** of payments Claude read from your screenshots. Swipe right to confirm, left to dismiss. Duplicates are flagged.
 - **Merchant memory.** Recategorize a shop once; future payments there land in the right envelope.
-- **Bills you can tick off.** Mark a bill paid and Spency logs the payment; untick one it assumed was paid and the money is set aside again.
+- **Bills you can tick off.** Mark a bill paid and Spency logs the payment; untick one it assumed was paid and the money is set aside again. Payments can be filed under a bill straight from the Inbox.
+- **Nothing lands in Flex by accident.** Payments Spency or Claude can't place go to your default envelope (Small stuff unless you choose another in Settings); Flex is yours to pick.
 - **Cash** withdrawals are transfers, not spending. Cash purchases still count toward envelopes.
 - **Daily reconcile** against your real bank balance, with a streak.
 - **Rebalance suggestions.** If one envelope goes over three weeks running while another stays under, Spency suggests moving money between them, applied in one tap.
@@ -64,6 +65,7 @@ Spency runs a remote [MCP](https://modelcontextprotocol.io) server at `/api/mcp`
 | `update_transaction` | Correct any payment, including past days: amount, merchant, category, wallet, date, note. |
 | `remove_transaction` | Take a mistaken or duplicate payment out of your balances. |
 | `update_commitment` / `remove_commitment` | Change or stop tracking a bill. |
+| `set_bill_paid` | "Netflix hasn't gone out yet" or "rent is paid": sets a bill's status for this month. |
 | `remove_envelope` | Delete an envelope; its history moves to Flex. |
 | `update_plan` | Change your target, pay and pay day, week start, or reset balances to what you have now. |
 
