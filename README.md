@@ -5,6 +5,8 @@ A calm spending tracker that keeps you on course for the month-end balance you p
 [![CI](https://github.com/apurvamukherjee/spency-pocket-wallet/actions/workflows/ci.yml/badge.svg)](https://github.com/apurvamukherjee/spency-pocket-wallet/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+![Spency: end every month on the balance you planned](docs/social-preview.png)
+
 ```bash
 git clone https://github.com/apurvamukherjee/spency-pocket-wallet.git && cd spency-pocket-wallet && npm install && npm run dev
 ```
@@ -108,6 +110,10 @@ One Next.js 16 app serves the UI, the server actions and (from Phase 3) the MCP 
 | 4 | Pattern detection, rebalance suggestions, polish, accessibility | planned |
 
 The full product spec is in [SPEC.md](SPEC.md) and the changes are in [CHANGELOG.md](CHANGELOG.md).
+
+## Brand assets
+
+The mark is a ring three-quarters full: on track. Sources live in [`docs/brand/`](docs/brand): `mark.svg`, `app-icon.html` (square app icons) and `share-card.html` (link previews), rendered to PNG with headless Chrome. Next.js picks up the tab icon, Apple touch icon, manifest and share images from `app/` automatically.
 
 ## Contributing
 
