@@ -1,6 +1,5 @@
 "use client";
 
-import type { PostgrestError } from "@supabase/supabase-js";
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo } from "react";
@@ -9,59 +8,10 @@ import { type Supabase, supabaseBrowser } from "@/lib/supabase/client";
 import { applyTheme } from "@/lib/theme";
 import { useUI } from "@/lib/ui";
 import { SpencyContext } from "./context";
+import { fetchAppData, must, ok, type Result, type User } from "./fetch";
 import * as r from "./reducers";
 import * as rows from "./rows";
 import type { Actions, AppData } from "./types";
-
-type User = { id: string; email: string | null };
-type Result = { error: PostgrestError | null };
-
-const DAY_MS = 86_400_000;
-
-class EmptyResponseError extends Error {
-  override name = "EmptyResponseError";
-}
-
-function ok(res: Result): void {
-  if (res.error) throw res.error;
-}
-
-function maybe<T>(res: { data: T | null; error: PostgrestError | null }): T | null {
-  ok(res);
-  return res.data;
-}
-
-function must<T>(res: { data: T | null; error: PostgrestError | null }): T {
-  const data = maybe(res);
-  if (data === null) throw new EmptyResponseError("Supabase returned no data");
-  return data;
-}
-
-// ponytail: one round trip for everything a month needs; paginate transactions if a month ever passes 1,000.
-async function fetchAppData(sb: Supabase, user: User): Promise<AppData> {
-  const [profile, plan, envelopes, commitments, memory, checks] = await Promise.all([
-    sb.from("profiles").select("*").eq("id", user.id).single().then(must),
-    sb.from("month_plans").select("*").order("month", { ascending: false }).limit(1).maybeSingle().then(maybe),
-    sb.from("envelopes").select("*").order("position").order("created_at").then(must),
-    sb.from("commitments").select("*").order("created_at").then(must),
-    sb.from("merchant_memory").select("*").then(must),
-    sb.from("reconcile_checks").select("*").order("date", { ascending: false }).limit(60).then(must),
-  ]);
-  // A week before the plan starts covers the partial first week; pending items always come along.
-  const since = new Date((plan ? Date.parse(plan.balance_at) : Date.now() - 31 * DAY_MS) - 8 * DAY_MS).toISOString();
-  const txns = must(
-    await sb.from("transactions").select("*").or(`status.eq.pending,occurred_at.gte."${since}"`).order("occurred_at"),
-  );
-  return {
-    profile: rows.profileFromRow(profile, user.email),
-    plan: plan && rows.planFromRow(plan),
-    envelopes: envelopes.map(rows.envelopeFromRow),
-    commitments: commitments.map(rows.commitmentFromRow),
-    txns: txns.map(rows.txnFromRow),
-    memory: Object.fromEntries(memory.map((m) => [m.merchant, m.envelope_id])),
-    checks: checks.map(rows.checkFromRow),
-  };
-}
 
 function cloudActions(sb: Supabase, qc: QueryClient, key: readonly unknown[], user: User, onError: (e: unknown) => void): Actions {
   let inFlight = 0;
