@@ -27,3 +27,9 @@ Read `SPEC.md` before any work. It is the source of truth. Phases are gated: fin
 - Commit granularly (one focused change per commit, descriptive subject + body saying what and why) and push to `origin` (github.com/apurvamukherjee/spency-pocket-wallet) after each step, using the local git identity only. No `Co-Authored-By` or any other attribution trailers.
 - Keep `README.md` current with every change: what works, how to run it, screenshots (in `docs/screenshots/`) refreshed at each phase milestone, and the Claude connector story (Spency as Claude's personal-wallet plugin via MCP).
 @AGENTS.md
+
+## Product decisions from the user (override SPEC.md)
+- Dark mode only. No light theme, no toggle.
+- UI must be clean, modern and minimal: no template look, no decorative filler, no emoji-heavy copy, no gradients-for-the-sake-of-it.
+- Single repo holds everything: the Next.js app serves UI, API routes and the MCP server; the engine lives in `lib/engine`. Don't split into workspace packages.
+- Testing cadence: light spot-checks while building; one deep end-to-end test pass after all phases are done. Don't re-run full verification after every step.
