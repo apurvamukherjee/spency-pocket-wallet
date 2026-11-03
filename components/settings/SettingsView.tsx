@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useMemo, useState } from "react";
 import { useActions, useAppData, useFormat, useMode, useSignOut, useSummary, useHasCurrentPlan } from "@/lib/data/context";
 import { useDemoStore } from "@/lib/data/demo";
+import { dayInMonth } from "@/lib/engine/dates";
 import type { Theme } from "@/lib/data/types";
 import { currencyOptions, localeOptions, timeZoneOptions } from "@/lib/locale";
 import { supabaseConfigured } from "@/lib/supabase/env";
@@ -157,12 +158,15 @@ function PlanForm() {
   const [cash, setCash] = useState(fmt.input(s.cash));
   const [target, setTarget] = useState(fmt.input(s.target));
   const [salary, setSalary] = useState(plan?.salary ? fmt.input(plan.salary.amount) : "");
-  const [salaryDate, setSalaryDate] = useState(plan?.salary?.date ?? "");
+  // Just the day of the month; the year and month always come from the plan.
+  const [salaryDay, setSalaryDay] = useState(plan?.salary ? String(+plan.salary.date.slice(8)) : "");
   const [weekStart, setWeekStart] = useState(String(plan?.weekStart ?? 1) as "0" | "1");
   const [saved, setSaved] = useState(false);
 
   const p = { bank: fmt.parse(bank), cash: fmt.parse(cash || "0"), target: fmt.parse(target), salary: fmt.parse(salary) };
-  const valid = p.bank !== null && p.cash !== null && p.target !== null && (!salary || (p.salary !== null && salaryDate !== ""));
+  const day = Number(salaryDay);
+  const dayOk = Number.isInteger(day) && day >= 1 && day <= 31;
+  const valid = p.bank !== null && p.cash !== null && p.target !== null && (!salary || (p.salary !== null && dayOk));
 
   function save(e: React.FormEvent) {
     e.preventDefault();
@@ -173,7 +177,7 @@ function PlanForm() {
       openingCash: p.cash,
       balanceAt: new Date().toISOString(),
       target: p.target,
-      salary: p.salary && salaryDate ? { amount: p.salary, date: salaryDate } : null,
+      salary: p.salary && dayOk && plan ? { amount: p.salary, date: dayInMonth(plan.month, day) } : null,
       weekStart: Number(weekStart),
     });
     setSaved(true);
@@ -189,8 +193,19 @@ function PlanForm() {
           <div />
           <Money label="Salary (optional)" symbol={fmt.symbol} value={salary} onChange={setSalary} />
           <label className="space-y-1.5">
-            <span className="label">Expected on</span>
-            <input className="field" type="date" value={salaryDate} onChange={(e) => setSalaryDate(e.target.value)} />
+            <span className="label">Pay day</span>
+            <input
+              className="field tabular-nums"
+              inputMode="numeric"
+              placeholder="1–31"
+              maxLength={2}
+              aria-describedby="payday-hint"
+              value={salaryDay}
+              onChange={(e) => setSalaryDay(e.target.value.replace(/\D/g, ""))}
+            />
+            <span id="payday-hint" className="block text-xs text-faint">
+              Day of the month. If it&apos;s already passed, Spency treats this month&apos;s pay as received.
+            </span>
           </label>
         </div>
         <div className="space-y-2">

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { enginePlan, useActions, useAppData, useFormat, useToday } from "@/lib/data/context";
 import type { PlanInput } from "@/lib/data/types";
-import { addMonths, daysInMonth, monthOf } from "@/lib/engine/dates";
+import { addMonths, dayInMonth, daysInMonth, monthOf } from "@/lib/engine/dates";
 import { unitOf } from "@/lib/engine/money";
 import { flexBudget, spendable } from "@/lib/engine/plan";
 import type { Commitment, Envelope, Minor } from "@/lib/engine/types";
@@ -37,8 +37,7 @@ function nice(minor: Minor, unit: number): Minor {
 
 /** Day of month → next date on or after today. */
 function nextOnDay(day: number, today: string): string {
-  const m = monthOf(today);
-  const d = `${m}-${String(Math.min(day, daysInMonth(m))).padStart(2, "0")}`;
+  const d = dayInMonth(monthOf(today), day);
   return d >= today ? d : addMonths(d, 1, day);
 }
 
@@ -160,8 +159,15 @@ export function OnboardingView() {
           <div className="grid grid-cols-[1fr_6rem] gap-3">
             <MoneyField label="Pay still coming this month (optional)" symbol={fmt.symbol} value={salary} onChange={setSalary} />
             <label className="space-y-1.5">
-              <span className="label">On day</span>
-              <input className="field" inputMode="numeric" placeholder="1–31" value={salaryDay} onChange={(e) => setSalaryDay(e.target.value)} />
+              <span className="label">Pay day</span>
+              <input
+                className="field tabular-nums"
+                inputMode="numeric"
+                placeholder="1–31"
+                maxLength={2}
+                value={salaryDay}
+                onChange={(e) => setSalaryDay(e.target.value.replace(/\D/g, ""))}
+              />
             </label>
           </div>
           {plan && (

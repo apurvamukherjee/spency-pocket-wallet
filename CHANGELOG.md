@@ -4,6 +4,9 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Changed
+- Salary asks only for the pay day (1–31) in Settings and onboarding, not a full date. The year and month come from the plan; short months clamp (31 → the 28th in February).
+
 ## [0.2.0] - 2026-11-03
 
 ### Added
