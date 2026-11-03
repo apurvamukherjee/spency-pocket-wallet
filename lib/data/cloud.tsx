@@ -8,7 +8,7 @@ import { type Supabase, supabaseBrowser } from "@/lib/supabase/client";
 import { applyTheme } from "@/lib/theme";
 import { useUI } from "@/lib/ui";
 import { SpencyContext } from "./context";
-import { fetchAppData, must, ok, type Result, type User } from "./fetch";
+import { fetchAppData, ok, type Result, type User } from "./fetch";
 import * as r from "./reducers";
 import * as rows from "./rows";
 import type { Actions, AppData } from "./types";

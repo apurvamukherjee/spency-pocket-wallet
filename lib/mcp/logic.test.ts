@@ -63,7 +63,7 @@ describe("planImport", () => {
   it("creates pending Claude transactions with categories", () => {
     const plan = planImport(data, [{ amount: "348", merchant: "Swiggy", suggested_category: "Eating out", occurred_at: "2026-11-03T12:48:00+05:30" }], 100, "2026-11-03T08:00:00Z", id);
     expect(plan.add).toHaveLength(1);
-    expect(plan.add[0]).toMatchObject({ amount: 34800, status: "pending", source: "claude", envelopeId: "e", occurredAt: "2026-11-03T07:18:00.000Z" });
+    expect(plan.add[0].txn).toMatchObject({ amount: 34800, status: "pending", source: "claude", envelopeId: "e", occurredAt: "2026-11-03T07:18:00.000Z" });
   });
 
   it("skips duplicates by reference and within the batch", () => {
@@ -78,8 +78,8 @@ describe("planImport", () => {
       "2026-11-03T08:00:00Z",
       id,
     );
-    expect(plan.add.map((t) => t.merchant)).toEqual(["Third Wave"]);
-    expect(plan.skipped.map((s) => s.duplicateOf.id)).toEqual(["old", plan.add[0].id]);
+    expect(plan.add.map((a) => a.txn.merchant)).toEqual(["Third Wave"]);
+    expect(plan.skipped.map((s) => s.duplicateOf.id)).toEqual(["old", plan.add[0].txn.id]);
   });
 
   it("refuses bad dates and blank merchants", () => {
@@ -89,6 +89,6 @@ describe("planImport", () => {
 
   it("treats credits as income outside envelopes", () => {
     const plan = planImport(data, [{ amount: 500, merchant: "Refund", direction: "credit", suggested_category: "Groceries" }], 100, "2026-11-03T00:00:00Z", id);
-    expect(plan.add[0]).toMatchObject({ direction: "credit", kind: "income", envelopeId: null });
+    expect(plan.add[0].txn).toMatchObject({ direction: "credit", kind: "income", envelopeId: null });
   });
 });

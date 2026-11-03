@@ -60,7 +60,7 @@ export type TxnInput = {
 };
 
 export type ImportPlan = {
-  add: (Txn & { via: CategoryMatch["via"] })[];
+  add: { txn: Txn; via: CategoryMatch["via"] }[];
   skipped: { input: TxnInput; duplicateOf: Txn }[];
 };
 
@@ -110,7 +110,7 @@ export function planImport(
       note: input.note?.trim() || null,
       createdAt: now,
     };
-    plan.add.push({ ...txn, via: category.via });
+    plan.add.push({ txn, via: category.via });
     seen.push(txn);
   }
   return plan;
