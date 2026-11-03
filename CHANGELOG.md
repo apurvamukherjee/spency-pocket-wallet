@@ -5,6 +5,10 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 ## [Unreleased]
 
 ### Added
+- Claude connector: a remote MCP server at `/api/mcp` with `get_summary`, `add_transactions`, `list_transactions`, `update_envelope`, `add_commitment`, `log_cash` and `reconcile`. Everything Claude adds arrives pending.
+- OAuth 2.1 sign-in for connectors through Supabase Auth, with a Spency consent screen and Settings → Connected apps to disconnect.
+- Settings → Connect Claude with the connector URL and setup steps.
+- Brand mark, tab and home-screen icons, web app manifest and share-link previews.
 - Accounts with email and password (sign up, sign in, password reset, email confirmation) on Supabase.
 - Postgres schema with row level security: every row is visible only to its owner.
 - Cloud sync with optimistic updates; failed saves roll back with a gentle notice.

@@ -19,7 +19,7 @@ git clone https://github.com/apurvamukherjee/spency-pocket-wallet.git && cd spen
 
 <img src="docs/screenshots/desktop.png" alt="Desktop: navigation, Home, and the persistent Inbox of payments from Claude">
 
-> **Status:** Phase 2 (accounts and sync) is built and in review. The Claude connector (Phase 3) is next. See the [roadmap](#roadmap).
+> **Status:** Phase 3 (the Claude connector) is built and in review. See the [roadmap](#roadmap).
 
 ## What it does
 
@@ -48,12 +48,29 @@ The point is that you don't type transactions in. Claude does.
                                     envelopes · flex · month-end projection
 ```
 
-1. Add Spency to Claude as a **custom connector**: a remote MCP server on the same deployment. You sign in once, so your Claude is tied to your Spency account.
-2. Drop payment screenshots into any Claude chat. Claude extracts the merchant, amount, time and reference, maps them to your envelope names, and sends them over.
-3. Everything Claude sends lands in your Inbox as **pending**. Nothing touches your balances until you confirm it.
-4. Ask Claude things like *"Can I afford a $60 dinner tonight?"* and it answers from your real numbers.
+Spency runs a remote [MCP](https://modelcontextprotocol.io) server at `/api/mcp`. Claude signs in through OAuth (Supabase Auth is the authorization server), so it acts as you and row level security keeps it inside your own data.
 
-Planned tools: `get_summary`, `add_transactions` (deduplicated by payment reference), `list_transactions`, `update_envelope`, `add_commitment`, `log_cash`, `reconcile`. Shipping in Phase 3.
+| Tool | What Claude can do |
+|---|---|
+| `get_summary` | Safe to spend today, envelopes, flex, bills, projected month-end. Answers "can I afford this?" |
+| `add_transactions` | Send payments read from screenshots to your Inbox as pending. Applies merchant memory, skips duplicates by reference or merchant + amount within 2 minutes. |
+| `list_transactions` | Look up payments by date, status or category. |
+| `update_envelope` | Change or create an envelope when you ask. |
+| `add_commitment` | Add a recurring bill. |
+| `log_cash` | Log a cash spend or a withdrawal (pending, like everything Claude adds). |
+| `reconcile` | Compare your real bank balance with Spency's and help find the gap. |
+
+Claude can't confirm transactions for you: nothing touches your balances until you swipe it in.
+
+### Connect it to Claude
+
+1. In Supabase → **Authentication → OAuth Server**: turn on the OAuth server, set **Authorization Path** to `/oauth/consent`, and turn on **Dynamic client registration**.
+2. Make sure **Authentication → URL Configuration → Site URL** is your deployed Spency URL.
+3. In Claude: **Settings → Connectors → Add custom connector**, name it Spency, URL `https://<your-spency>/api/mcp`. (Settings → Connect Claude in Spency shows the exact URL with a copy button.)
+4. Claude opens Spency's consent page. Sign in, review what it can do, and Allow.
+5. Drop a payment screenshot into any chat. It shows up in your Inbox.
+
+Disconnect any time in Spency → Settings → Connected apps.
 
 ## Run it
 
@@ -90,7 +107,7 @@ Everything shown is derived from the month plan plus confirmed transactions, in 
 
 ## Architecture
 
-One Next.js 16 app serves the UI, the server actions and (from Phase 3) the MCP server.
+One Next.js 16 app serves the UI, the server actions and the MCP server.
 
 | Layer | Where | Notes |
 |---|---|---|
@@ -98,6 +115,7 @@ One Next.js 16 app serves the UI, the server actions and (from Phase 3) the MCP 
 | Data | `lib/data/` | Pure reducers shared by the local demo (Zustand) and the cloud (TanStack Query + Supabase, optimistic). |
 | Database | `supabase/migrations/` | Postgres with row level security on every table; composite keys stop cross-user references. |
 | Auth | `app/(auth)/`, `proxy.ts` | Email and password through Supabase; the proxy refreshes the session cookie. |
+| Claude connector | `app/api/mcp/`, `lib/mcp/`, `app/(auth)/oauth/consent/` | MCP tools over Streamable HTTP (`mcp-handler`), OAuth 2.1 via Supabase Auth, consent screen. |
 | UI | `app/(app)/`, `components/` | Tailwind CSS 4, hand-drawn icons and charts, native `<dialog>` sheets. |
 
 ## Roadmap
@@ -105,8 +123,8 @@ One Next.js 16 app serves the UI, the server actions and (from Phase 3) the MCP 
 | Phase | What | State |
 |---|---|---|
 | 1 | Screens and weekly settlement engine on local data | done |
-| 2 | Supabase schema, row level security, accounts, sync, any currency, light theme | done, in review |
-| 3 | MCP server with OAuth, Claude connector setup guide | next |
+| 2 | Supabase schema, row level security, accounts, sync, any currency, light theme | done |
+| 3 | MCP server with OAuth, Claude connector setup guide | done, in review |
 | 4 | Pattern detection, rebalance suggestions, polish, accessibility | planned |
 
 The full product spec is in [SPEC.md](SPEC.md) and the changes are in [CHANGELOG.md](CHANGELOG.md).
