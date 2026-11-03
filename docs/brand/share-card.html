@@ -1,0 +1,60 @@
+<!doctype html>
+<!-- Source for the Open Graph / Twitter / GitHub social preview images. Render at 1200×630 or 1280×640. -->
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 100%; height: 100%; }
+  body {
+    font-family: Geist, system-ui, sans-serif; color: #eceef2; background: #0a0b0d;
+    display: grid; grid-template-columns: 1.15fr 1fr; align-items: center; gap: 64px; padding: 0 88px;
+    position: relative; overflow: hidden;
+  }
+  body::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(60% 70% at 85% 20%, rgb(160 186 245 / 0.16), transparent 70%),
+      radial-gradient(40% 50% at 10% 100%, rgb(120 210 170 / 0.07), transparent 70%);
+  }
+  body::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.35;
+    background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(70% 80% at 70% 40%, black, transparent);
+  }
+  .brand { display: flex; align-items: center; gap: 14px; font-size: 30px; font-weight: 600; letter-spacing: -0.02em; }
+  .brand img { width: 48px; height: 48px; }
+  h1 { margin-top: 44px; font-size: 62px; line-height: 1.04; font-weight: 500; letter-spacing: -0.035em; }
+  p.sub { margin-top: 24px; font-size: 25px; line-height: 1.4; color: #8a919b; max-width: 560px; }
+  .card { position: relative; z-index: 1; background: #121418; border: 1px solid #22262c; border-radius: 32px; padding: 40px; }
+  .label { font-size: 20px; color: #8a919b; }
+  .hero { margin-top: 6px; font-size: 92px; font-weight: 500; letter-spacing: -0.05em; font-variant-numeric: tabular-nums; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; padding: 6px 14px; border-radius: 99px; font-size: 18px; color: #7fd4ac; background: rgb(127 212 172 / 0.12); }
+  .chip::before { content: ""; width: 8px; height: 8px; border-radius: 99px; background: currentColor; }
+  .row { margin-top: 26px; }
+  .row .top { display: flex; justify-content: space-between; font-size: 20px; margin-bottom: 10px; }
+  .row .top span:last-child { color: #8a919b; }
+  .bar { height: 8px; border-radius: 99px; background: #1a1d22; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 99px; background: #a0baf5; }
+  .note { margin-top: 10px; font-size: 16px; color: #8a919b; }
+  .brand, h1, p.sub { position: relative; z-index: 1; }
+</style>
+</head>
+<body>
+  <div>
+    <div class="brand"><img src="mark.svg" alt="">spency</div>
+    <h1>End every month on the balance you planned.</h1>
+    <p class="sub">Weekly envelopes, one number for today, and Claude logging payments from your screenshots.</p>
+  </div>
+  <div class="card">
+    <div class="label">Safe to spend today</div>
+    <div class="hero">1,240</div>
+    <div class="chip">On track</div>
+    <div class="row"><div class="top"><span>Groceries</span><span>62%</span></div><div class="bar"><i style="width:62%"></i></div></div>
+    <div class="row"><div class="top"><span>Eating out</span><span>100%</span></div><div class="bar"><i style="width:100%;background:#7fd4ac"></i></div><div class="note">Covered by Groceries savings</div></div>
+    <div class="row"><div class="top"><span>Transport</span><span>35%</span></div><div class="bar"><i style="width:35%"></i></div></div>
+  </div>
+</body>
+</html>
