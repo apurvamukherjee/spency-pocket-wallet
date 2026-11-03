@@ -62,7 +62,7 @@ Planned tools: `get_summary`, `add_transactions` (deduplicated by payment refere
 **With accounts:** Spency uses [Supabase](https://supabase.com) for Postgres and auth.
 
 1. Create a free Supabase project.
-2. `cp .env.example .env.local` and fill in `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Project Settings → API).
+2. `cp .env.example .env.local` and fill in `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` (Project Settings → API).
 3. Apply the schema:
    ```bash
    npx supabase login
