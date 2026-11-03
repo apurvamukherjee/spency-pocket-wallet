@@ -1,9 +1,10 @@
 "use server";
 
 import type { AuthError, EmailOtpType } from "@supabase/supabase-js";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { safeNext } from "@/lib/safe-next";
+import { REMEMBER_COOKIE, REMEMBER_SECONDS } from "@/lib/supabase/remember";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export type AuthState = { error?: string; notice?: string; email?: string; unconfirmed?: boolean } | null;
@@ -47,9 +48,13 @@ export async function signIn(_: AuthState, form: FormData): Promise<AuthState> {
   const email = field(form, "email");
   const password = form.get("password");
   if (!email || typeof password !== "string" || !password) return { error: "Enter your email and password.", email };
-  const sb = await supabaseServer();
+  const remember = form.get("remember") === "on";
+  const sb = await supabaseServer(remember);
   const { error } = await sb.auth.signInWithPassword({ email, password });
   if (error) return { error: friendly(error), email, unconfirmed: error.code === "email_not_confirmed" };
+  const store = await cookies();
+  if (remember) store.set(REMEMBER_COOKIE, "1", { path: "/", sameSite: "lax", maxAge: REMEMBER_SECONDS });
+  else store.delete(REMEMBER_COOKIE);
   redirect(safeNext(field(form, "next")));
 }
 

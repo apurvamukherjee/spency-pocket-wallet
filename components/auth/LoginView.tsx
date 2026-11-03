@@ -192,6 +192,12 @@ function AuthForm({ mode, next, onForgot, onBack }: { mode: Mode; next: string; 
             <input type="hidden" name="timeZone" value={defaults.timeZone} />
           </>
         )}
+        {mode === "signin" && (
+          <label className="flex items-center gap-2.5 text-sm text-muted">
+            <input type="checkbox" name="remember" defaultChecked className="size-4 accent-accent" />
+            Keep me signed in for 30 days
+          </label>
+        )}
         {state?.error && (
           <p role="alert" className="text-sm text-bad">
             {state.error}
