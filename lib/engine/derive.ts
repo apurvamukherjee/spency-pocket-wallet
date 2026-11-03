@@ -111,6 +111,25 @@ export function commitmentsRemaining(plan: MonthPlan, cs: Commitment[], txns: Tx
   }, 0);
 }
 
+/** End-of-day bank + cash from plan start to `today`, for the month chart. */
+export function balanceSeries(plan: MonthPlan, txns: Txn[], today: ISODate): { date: ISODate; balance: Paise }[] {
+  const win = planWindow(plan);
+  const byDay = new Map<ISODate, Paise>();
+  for (const t of txns) {
+    if (!confirmedAfter(plan, t) || t.kind === "transfer") continue;
+    const d = toISTDate(t.occurredAt);
+    byDay.set(d, (byDay.get(d) ?? 0) + signed(t));
+  }
+  const last = today > win.end ? win.end : today;
+  const out: { date: ISODate; balance: Paise }[] = [];
+  let balance = plan.openingBank + plan.openingCash;
+  for (let d = win.start; d <= last; d = addDays(d, 1)) {
+    balance += byDay.get(d) ?? 0;
+    out.push({ date: d, balance });
+  }
+  return out;
+}
+
 /**
  * Rolls the month forward week by week from the plan start to `today`.
  * Weeks at the plan's edges are prorated (limit and counted spend) to the days inside the plan,
