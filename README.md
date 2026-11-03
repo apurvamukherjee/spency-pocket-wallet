@@ -19,7 +19,7 @@ git clone https://github.com/apurvamukherjee/spency-pocket-wallet.git && cd spen
 
 <img src="docs/screenshots/desktop.png" alt="Desktop: navigation, Home, and the persistent Inbox of payments from Claude">
 
-> **Status:** Phase 3 (the Claude connector) is built and in review. See the [roadmap](#roadmap).
+> **Status:** All four phases are built. A final end-to-end test pass and the open-source launch checklist are next.
 
 ## What it does
 
@@ -31,6 +31,8 @@ You tell Spency your balance today and the balance you want at month-end. It set
 - **Merchant memory.** Recategorize a shop once; future payments there land in the right envelope.
 - **Cash** withdrawals are transfers, not spending. Cash purchases still count toward envelopes.
 - **Daily reconcile** against your real bank balance, with a streak.
+- **Rebalance suggestions.** If one envelope goes over three weeks running while another stays under, Spency suggests moving money between them, applied in one tap.
+- **Start fresh** any time from Settings: a typed-confirmation reset that keeps your account.
 - **Works everywhere.** Any currency, number format and time zone. Dark mode by default, light mode in Settings.
 - **Private by design.** Spency never asks for bank logins. It only knows what you or Claude tell it.
 
@@ -96,6 +98,27 @@ npm run lint
 npm run build
 ```
 
+## Deploy to Vercel
+
+1. Import the GitHub repo in Vercel (framework: Next.js, root `./`, Node 20+).
+2. Project → Settings → Environment Variables, for Production, Preview and Development:
+
+   | Name | Value |
+   |---|---|
+   | `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+   | `SUPABASE_PUBLISHABLE_KEY` | the **publishable** key (never the secret / service_role key) |
+   | `NEXT_PUBLIC_SITE_URL` | optional, only for a custom domain |
+
+   The `NEXT_PUBLIC_` versions of the Supabase names work too. Values are read at build time, so redeploy after changing them.
+3. Supabase → **Authentication → URL Configuration**: Site URL = your Vercel URL; add `https://<your-domain>/**` to Redirect URLs.
+4. Supabase → **Authentication → Emails**: paste [`supabase/templates/confirmation.html`](supabase/templates/confirmation.html) into *Confirm signup* and [`recovery.html`](supabase/templates/recovery.html) into *Reset password*. Their links work on any device.
+5. Supabase → **Authentication → OAuth Server**: enable it, Authorization Path `/oauth/consent`, dynamic client registration on (for the Claude connector).
+6. Apply the schema once: `npx supabase link --project-ref <ref>` then `npx supabase db push --remote`.
+
+Every push to `main` deploys. Check a deploy by opening the site (you should see "Welcome back", not "Accounts aren't set up here") and `https://<your-domain>/.well-known/oauth-protected-resource/api/mcp`, which should name your Supabase project.
+
+The built-in Supabase email sender is rate-limited; for real users, set up custom SMTP in Authentication → Emails.
+
 ## How the numbers work
 
 Everything shown is derived from the month plan plus confirmed transactions, in integer minor units (cents, paise, yen). The engine is plain TypeScript in [`lib/engine`](lib/engine) with no framework imports, covered by Vitest.
@@ -124,8 +147,8 @@ One Next.js 16 app serves the UI, the server actions and the MCP server.
 |---|---|---|
 | 1 | Screens and weekly settlement engine on local data | done |
 | 2 | Supabase schema, row level security, accounts, sync, any currency, light theme | done |
-| 3 | MCP server with OAuth, Claude connector setup guide | done, in review |
-| 4 | Pattern detection, rebalance suggestions, polish, accessibility | planned |
+| 3 | MCP server with OAuth, Claude connector setup guide | done |
+| 4 | Pattern detection, rebalance suggestions, recent activity, hard reset, accessibility, deployment notes | done, in review |
 
 The full product spec is in [SPEC.md](SPEC.md) and the changes are in [CHANGELOG.md](CHANGELOG.md).
 

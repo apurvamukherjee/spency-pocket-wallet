@@ -5,6 +5,16 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 ## [Unreleased]
 
 ### Added
+- Rebalance suggestions: when one envelope is over three weeks running and another stays under, Spency offers to move money between them in one tap.
+- Recent activity on Home; tap a payment to edit or remove it.
+- Settings → Start fresh: a typed-confirmation hard reset that keeps your account, profile and connected apps.
+- Empty state for Bills, and deployment notes for Vercel in the README.
+
+### Fixed
+- Email confirmation and password reset links failed as "expired" when opened in another browser or pre-opened by a mail scanner. Links now work on any device and are only used when you press Continue; failures explain why and offer a resend.
+
+### Changed
+- Hint text meets WCAG AA contrast in both themes; screen readers hear inbox counts as "4 to review".
 - Claude connector: a remote MCP server at `/api/mcp` with `get_summary`, `add_transactions`, `list_transactions`, `update_envelope`, `add_commitment`, `log_cash` and `reconcile`. Everything Claude adds arrives pending.
 - OAuth 2.1 sign-in for connectors through Supabase Auth, with a Spency consent screen and Settings → Connected apps to disconnect.
 - Settings → Connect Claude with the connector URL and setup steps.
