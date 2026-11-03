@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allocate, floorToRupee, formatINR, MoneyError, parseRupees, rupees } from "./money";
+import { allocate, allocateRupees, floorToRupee, formatINR, MoneyError, parseRupees, rupees } from "./money";
 
 describe("formatINR", () => {
   it("uses Indian digit grouping", () => {
@@ -51,5 +51,12 @@ describe("allocate", () => {
   });
   it("handles zero weights", () => {
     expect(allocate(100, [0, 0])).toEqual([0, 0]);
+  });
+});
+
+describe("allocateRupees", () => {
+  it("splits in whole rupees and still sums exactly", () => {
+    expect(allocateRupees(rupees(115), [rupees(114), rupees(43)])).toEqual([rupees(84), rupees(31)]);
+    expect(allocateRupees(11550, [1, 3])).toEqual([2900, 8650]);
   });
 });

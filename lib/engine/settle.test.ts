@@ -24,10 +24,10 @@ describe("settleWeek", () => {
     expect(s.hitTarget).toBe(0);
     // Proportional to savings 200:100.
     expect(s.covers).toEqual([
-      { from: "Blinkit", to: "Small stuff", amount: 13333 },
-      { from: "Fuel", to: "Small stuff", amount: 6667 },
+      { from: "Blinkit", to: "Small stuff", amount: 13300 },
+      { from: "Fuel", to: "Small stuff", amount: 6700 },
     ]);
-    expect(s.envelopes.find((e) => e.id === "Blinkit")?.left).toBe(rupees(200) - 13333);
+    expect(s.envelopes.find((e) => e.id === "Blinkit")?.left).toBe(rupees(67));
   });
 
   it("flex used: the spec example", () => {

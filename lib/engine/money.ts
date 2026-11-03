@@ -38,6 +38,15 @@ export function floorToRupee(paise: Paise): Paise {
   return paise - (((paise % 100) + 100) % 100);
 }
 
+/** Like allocate, but in whole rupees; leftover paise go to the largest weight. Keeps derived numbers clean. */
+export function allocateRupees(total: Paise, weights: Paise[]): Paise[] {
+  if (weights.every((w) => w <= 0)) return weights.map(() => 0);
+  const paise = total % 100;
+  const out = allocate((total - paise) / 100, weights).map((r) => r * 100);
+  if (paise > 0) out[weights.indexOf(Math.max(...weights))] += paise;
+  return out;
+}
+
 /**
  * Splits `total` across `weights` proportionally, summing exactly to `total`
  * (largest-remainder). BigInt because total × weight can exceed 2^53.

@@ -1,4 +1,4 @@
-import { allocate, formatINR } from "./money";
+import { allocateRupees, formatINR } from "./money";
 import type { LeftoverRule, Paise } from "./types";
 
 export type EnvelopeWeek = {
@@ -54,13 +54,13 @@ export function settleWeek(envs: EnvelopeWeek[], flexAvailable: Paise): Settleme
 
   const overspend = overBy.reduce((a, b) => a + b, 0);
   const coveredBySavings = Math.min(overspend, canGive.reduce((a, b) => a + b, 0));
-  const gave = allocate(coveredBySavings, canGive);
-  const received = allocate(coveredBySavings, overBy);
+  const gave = allocateRupees(coveredBySavings, canGive);
+  const received = allocateRupees(coveredBySavings, overBy);
 
   const residual = overBy.map((o, i) => o - received[i]);
   const remaining = overspend - coveredBySavings;
   const fromFlex = Math.min(remaining, Math.max(0, flexAvailable));
-  const flexShare = allocate(fromFlex, residual);
+  const flexShare = allocateRupees(fromFlex, residual);
   const targetShare = residual.map((r, i) => r - flexShare[i]);
 
   const envelopes: EnvelopeResult[] = envs.map((e, i) => ({
