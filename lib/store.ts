@@ -116,7 +116,8 @@ export const useSpency = create<State>()(
     },
     {
       name: "spency-v1",
-      storage: createJSONStorage(() => localStorage),
+      // window.* so the server throws (zustand skips storage) instead of touching Node's global localStorage.
+      storage: createJSONStorage(() => window.localStorage),
       skipHydration: true,
       partialize: ({ data, memory, checks }) => ({ data, memory, checks }),
     },
