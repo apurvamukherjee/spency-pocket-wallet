@@ -3,9 +3,9 @@
 import { createContext, useContext, useMemo } from "react";
 import { monthOf, todayIn } from "@/lib/engine/dates";
 import { type SpencyData, summarize } from "@/lib/engine/derive";
-import type { MonthPlan } from "@/lib/engine/types";
 import { makeFormatters } from "@/lib/format";
-import type { Actions, AppData, Profile, StoredPlan } from "./types";
+import { enginePlan } from "./plan";
+import type { Actions, AppData } from "./types";
 
 export type Mode = "demo" | "cloud";
 
@@ -29,11 +29,7 @@ export const useMode = () => useCtx().mode;
 export const useSignOut = () => useCtx().signOut;
 export const useProfile = () => useCtx().data.profile;
 
-export const enginePlan = (plan: StoredPlan, profile: Profile): MonthPlan => ({
-  ...plan,
-  currency: profile.currency,
-  timeZone: profile.timeZone,
-});
+export { enginePlan } from "./plan";
 
 export function useToday() {
   return todayIn(useProfile().timeZone);
