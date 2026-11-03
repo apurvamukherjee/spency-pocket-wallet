@@ -109,8 +109,8 @@ function TxnCard({ txn, duplicateOf, envelopes, today }: { txn: Txn; duplicateOf
       </div>
       {duplicateOf && (
         <p className="mt-3 rounded-xl bg-warn/10 px-3 py-2 text-[13px] text-warn">
-          Looks like the {formatWhen(duplicateOf.occurredAt, today).toLowerCase()} payment
-          {duplicateOf.upiRef && duplicateOf.upiRef === txn.upiRef ? " (same UPI ref)" : ""}. Probably a duplicate.
+          Matches a {formatINR(duplicateOf.amount)} payment from {formatWhen(duplicateOf.occurredAt, today)}
+          {duplicateOf.upiRef && duplicateOf.upiRef === txn.upiRef ? " with the same UPI ref" : ""}. Probably a duplicate.
         </p>
       )}
     </button>
