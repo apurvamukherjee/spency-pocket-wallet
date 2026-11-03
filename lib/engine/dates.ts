@@ -1,0 +1,79 @@
+import type { ISODate, MonthKey } from "./types";
+
+const DAY_MS = 86_400_000;
+
+const istDate = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kolkata",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+export function toISTDate(instant: string | Date): ISODate {
+  return istDate.format(typeof instant === "string" ? new Date(instant) : instant);
+}
+
+export function todayIST(now: Date = new Date()): ISODate {
+  return toISTDate(now);
+}
+
+/** `YYYY-MM-DD` treated as a pure calendar day; UTC epoch math avoids DST/timezone drift. */
+function toDays(d: ISODate): number {
+  return Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / DAY_MS;
+}
+
+function fromDays(n: number): ISODate {
+  return new Date(n * DAY_MS).toISOString().slice(0, 10);
+}
+
+export function addDays(d: ISODate, n: number): ISODate {
+  return fromDays(toDays(d) + n);
+}
+
+/** Whole days from `a` to `b` (b − a). */
+export function diffDays(a: ISODate, b: ISODate): number {
+  return toDays(b) - toDays(a);
+}
+
+export function dayOfWeek(d: ISODate): number {
+  return new Date(toDays(d) * DAY_MS).getUTCDay();
+}
+
+export function weekStartOf(d: ISODate, weekStart: number): ISODate {
+  return addDays(d, -((dayOfWeek(d) - weekStart + 7) % 7));
+}
+
+export function weekEndOf(d: ISODate, weekStart: number): ISODate {
+  return addDays(weekStartOf(d, weekStart), 6);
+}
+
+export function monthOf(d: ISODate): MonthKey {
+  return d.slice(0, 7);
+}
+
+export function daysInMonth(m: MonthKey): number {
+  return new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).getUTCDate();
+}
+
+export function monthStart(m: MonthKey): ISODate {
+  return `${m}-01`;
+}
+
+export function monthEnd(m: MonthKey): ISODate {
+  return `${m}-${String(daysInMonth(m)).padStart(2, "0")}`;
+}
+
+const minDate = (a: ISODate, b: ISODate) => (a < b ? a : b);
+const maxDate = (a: ISODate, b: ISODate) => (a > b ? a : b);
+
+/** Inclusive day count shared by [aStart, aEnd] and [bStart, bEnd]. */
+export function overlapDays(aStart: ISODate, aEnd: ISODate, bStart: ISODate, bEnd: ISODate): number {
+  return Math.max(0, diffDays(maxDate(aStart, bStart), minDate(aEnd, bEnd)) + 1);
+}
+
+/** Month step that keeps the anchor day-of-month, clamped to short months (31 Jan + 1 → 28/29 Feb). */
+export function addMonths(d: ISODate, n: number, anchorDay = +d.slice(8, 10)): ISODate {
+  const total = +d.slice(0, 4) * 12 + (+d.slice(5, 7) - 1) + n;
+  const m = `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}`;
+  return `${m}-${String(Math.min(anchorDay, daysInMonth(m))).padStart(2, "0")}`;
+}
