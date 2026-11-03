@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { rememberMerchant } from "@/lib/engine/inbox";
 import type { Envelope, Txn } from "@/lib/engine/types";
-import { planImport, resolveCategory, toMinor, ToolInputError } from "./logic";
+import { beforePlanNote, envelopeIdByName, planImport, resolveCategory, toMinor, ToolInputError } from "./logic";
 
 const env = (id: string, name: string): Envelope => ({ id, name, weeklyLimit: 50000, locked: false, leftover: "rollover" });
 const envelopes = [env("g", "Groceries"), env("e", "Eating out")];
@@ -90,5 +90,23 @@ describe("planImport", () => {
   it("treats credits as income outside envelopes", () => {
     const plan = planImport(data, [{ amount: 500, merchant: "Refund", direction: "credit", suggested_category: "Groceries" }], 100, "2026-11-03T00:00:00Z", id);
     expect(plan.add[0].txn).toMatchObject({ direction: "credit", kind: "income", envelopeId: null });
+  });
+});
+
+describe("envelopeIdByName", () => {
+  it("matches names in any case and Flex", () => {
+    expect(envelopeIdByName(envelopes, "eating OUT")).toBe("e");
+    expect(envelopeIdByName(envelopes, "Flex")).toBeNull();
+  });
+  it("explains unknown names", () => {
+    expect(() => envelopeIdByName(envelopes, "Clothes")).toThrow(/Groceries, Eating out, Flex/);
+  });
+});
+
+describe("beforePlanNote", () => {
+  it("only flags payments before the plan's starting balance", () => {
+    expect(beforePlanNote("2026-10-30T10:00:00Z", "2026-11-01T00:00:00+05:30")).toMatch(/before this month's plan/);
+    expect(beforePlanNote("2026-11-02T10:00:00Z", "2026-11-01T00:00:00+05:30")).toBeUndefined();
+    expect(beforePlanNote("2026-10-30T10:00:00Z", null)).toBeUndefined();
   });
 });

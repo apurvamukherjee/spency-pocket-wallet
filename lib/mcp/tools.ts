@@ -3,15 +3,16 @@ import { z } from "zod";
 import { fetchAppData, ok } from "@/lib/data/fetch";
 import { enginePlan } from "@/lib/data/plan";
 import * as rows from "@/lib/data/rows";
-import type { AppData } from "@/lib/data/types";
-import { addDays, monthOf, toLocalDate, todayIn } from "@/lib/engine/dates";
+import type { AppData, PlanInput } from "@/lib/data/types";
+import { addDays, dayInMonth, monthOf, toLocalDate, todayIn } from "@/lib/engine/dates";
 import { summarize } from "@/lib/engine/derive";
+import { normalizeMerchant } from "@/lib/engine/inbox";
 import { moneyFormatter, unitOf } from "@/lib/engine/money";
 import { reconcileGap } from "@/lib/engine/reconcile";
 import type { Commitment, Envelope, Txn } from "@/lib/engine/types";
 import type { Supabase } from "@/lib/supabase/client";
 import { supabaseAs } from "@/lib/supabase/token";
-import { categoryName, findEnvelope, planImport, summaryPayload, ToolInputError, toMinor, txnPayload } from "./logic";
+import { beforePlanNote, categoryName, envelopeIdByName, findEnvelope, planImport, summaryPayload, ToolInputError, toMinor, txnPayload } from "./logic";
 
 export const INSTRUCTIONS = `Spency is the user's personal spending tracker. It helps them end each month on a balance they chose.
 
@@ -20,6 +21,8 @@ Logging payments from screenshots (UPI, card, bank or wallet apps):
 2. For every payment in the screenshots extract: merchant (who was paid, cleaned up, e.g. "Swiggy" not "SWIGGY*BANGALORE"), amount, the date-time with time zone offset, the reference number (UPI ref / UTR / transaction ID) if visible, and whether money went out (debit) or came in (credit).
 3. Call add_transactions once with all of them. Set suggested_category to the closest envelope name from get_summary, or "Flex" for one-off spends.
 4. Everything you add is pending. Tell the user to confirm it in Spency's Inbox; nothing changes their balances until they do.
+
+Past days and corrections: payments from earlier days go through add_transactions with their real date. To fix something already in Spency (wrong amount, category, date, or a payment that shouldn't be there), call list_transactions to find its id, then update_transaction or remove_transaction. Bills, envelopes and the month plan can be changed with update_commitment, remove_commitment, update_envelope, remove_envelope and update_plan. Say what you're about to change and get a yes before removing anything or changing balances. Only the user can confirm pending payments, in the app.
 
 Questions like "can I afford a 1,500 dinner?": call get_summary and compare with safe_to_spend_today (today's comfortable amount) and flex_left (room for unplanned spends). Be honest and kind; never guilt the user.
 
@@ -68,6 +71,15 @@ function needsPlan(s: Session) {
     throw new ToolInputError("The user hasn't set up this month's plan yet. Ask them to open Spency once to set their balance and target.");
   }
   return summarize({ ...s.data, plan: enginePlan(plan, profile) }, s.today);
+}
+
+const withNote = (note: string | undefined) => (note ? { note_for_user: note } : {});
+
+function findCommitment(cs: Commitment[], name: string): Commitment {
+  const n = name.trim().toLowerCase();
+  const c = cs.find((x) => x.name.toLowerCase() === n);
+  if (!c) throw new ToolInputError(`No bill called "${name}". Existing: ${cs.map((x) => x.name).join(", ") || "none"}.`);
+  return c;
 }
 
 /** Existing transactions that share a reference with the incoming batch, even if older than the loaded month. */
@@ -131,6 +143,7 @@ export function registerTools(server: McpServer) {
       return {
         added: plan.add.map(({ txn, via }) => ({
           ...txnPayload(txn, s.data.envelopes, s.money),
+          ...withNote(beforePlanNote(txn.occurredAt, s.data.plan?.balanceAt ?? null)),
           category_from: { memory: "the user's merchant memory", suggestion: "your suggestion", flex: "no matching envelope, so Flex" }[via],
         })),
         skipped_as_duplicates: plan.skipped.map(({ input, duplicateOf }) => ({
@@ -287,6 +300,210 @@ export function registerTools(server: McpServer) {
       ok(await s.sb.from("transactions").insert(rows.txnToRow(t)));
       return { added: txnPayload(t, s.data.envelopes, s.money), next_step: "Waiting in the Inbox to confirm." };
     }),
+  );
+
+  server.registerTool(
+    "update_transaction",
+    {
+      title: "Correct a payment",
+      description:
+        "Fix any payment, pending or confirmed, including past days: amount, merchant, category (envelope name or Flex), wallet, date-time, direction or note. Find the id with list_transactions first. Changing the category teaches merchant memory, like it does in the app. Tell the user what will change before calling.",
+      inputSchema: z.object({
+        id: z.string().uuid().describe("Transaction id from list_transactions"),
+        amount: amount.optional(),
+        merchant: z.string().min(1).max(120).optional(),
+        category: z.string().max(60).optional().describe("Envelope name or Flex"),
+        wallet: z.enum(["bank", "cash"]).optional(),
+        occurred_at: z.string().optional().describe("ISO 8601 with offset"),
+        direction: z.enum(["debit", "credit"]).optional(),
+        note: z.string().max(500).optional().describe("Empty string clears the note"),
+      }),
+      annotations: { idempotentHint: true },
+    },
+    guard(
+      async (
+        args: {
+          id: string;
+          amount?: number | string;
+          merchant?: string;
+          category?: string;
+          wallet?: Txn["wallet"];
+          occurred_at?: string;
+          direction?: Txn["direction"];
+          note?: string;
+        },
+        s,
+      ) => {
+        const found = await s.sb.from("transactions").select("*").eq("id", args.id).maybeSingle();
+        ok(found);
+        if (!found.data) throw new ToolInputError("No payment with that id. Call list_transactions to find it.");
+        const before = rows.txnFromRow(found.data);
+        const when = args.occurred_at !== undefined ? new Date(args.occurred_at) : null;
+        if (when && Number.isNaN(when.getTime())) throw new ToolInputError(`"${args.occurred_at}" isn't a date-time.`);
+        const patch = {
+          ...(args.amount !== undefined ? { amount: toMinor(args.amount, s.unit) } : {}),
+          ...(args.merchant !== undefined ? { merchant: args.merchant.trim() } : {}),
+          ...(args.category !== undefined ? { envelopeId: envelopeIdByName(s.data.envelopes, args.category) } : {}),
+          ...(args.wallet !== undefined ? { wallet: args.wallet } : {}),
+          ...(when ? { occurredAt: when.toISOString() } : {}),
+          ...(args.direction !== undefined ? { direction: args.direction } : {}),
+          ...(args.note !== undefined ? { note: args.note.trim() || null } : {}),
+        };
+        if (Object.keys(patch).length === 0) throw new ToolInputError("Nothing to change. Pass at least one field.");
+        ok(await s.sb.from("transactions").update(rows.txnPatchToRow(patch)).eq("id", args.id));
+        if (patch.envelopeId !== undefined && patch.envelopeId !== before.envelopeId) {
+          ok(
+            await s.sb
+              .from("merchant_memory")
+              .upsert({ merchant: normalizeMerchant(patch.merchant ?? before.merchant), envelope_id: patch.envelopeId }),
+          );
+        }
+        const after: Txn = { ...before, ...patch };
+        return {
+          before: txnPayload(before, s.data.envelopes, s.money),
+          after: txnPayload(after, s.data.envelopes, s.money),
+          effect: after.status === "confirmed" ? "Balances and envelopes are updated." : "Still waiting in the Inbox for the user to confirm.",
+          ...withNote(beforePlanNote(after.occurredAt, s.data.plan?.balanceAt ?? null)),
+        };
+      },
+    ),
+  );
+
+  server.registerTool(
+    "remove_transaction",
+    {
+      title: "Remove a payment",
+      description:
+        "Take a payment out of Spency (a duplicate, a mistake, a refunded order). Works for pending and confirmed payments, the same as Remove in the app. Ask the user first.",
+      inputSchema: z.object({ id: z.string().uuid().describe("Transaction id from list_transactions") }),
+      annotations: { destructiveHint: true, idempotentHint: true },
+    },
+    guard(async ({ id }: { id: string }, s) => {
+      const res = await s.sb.from("transactions").update({ status: "rejected" }).eq("id", id).select("*").maybeSingle();
+      ok(res);
+      if (!res.data) throw new ToolInputError("No payment with that id. Call list_transactions to find it.");
+      return { removed: txnPayload(rows.txnFromRow(res.data), s.data.envelopes, s.money), effect: "No longer counts toward any balance." };
+    }),
+  );
+
+  server.registerTool(
+    "update_commitment",
+    {
+      title: "Change a recurring bill",
+      description: "Change a bill's name, amount, frequency or next debit date. Find it by its current name.",
+      inputSchema: z.object({
+        name: z.string().min(1).max(60).describe("Current bill name"),
+        new_name: z.string().min(1).max(60).optional(),
+        amount: amount.optional(),
+        frequency: z.enum(["weekly", "monthly", "yearly"]).optional(),
+        next_debit: isoDate.optional(),
+      }),
+      annotations: { idempotentHint: true },
+    },
+    guard(async (args: { name: string; new_name?: string; amount?: number | string; frequency?: Commitment["frequency"]; next_debit?: string }, s) => {
+      const c = findCommitment(s.data.commitments, args.name);
+      const next: Commitment = {
+        ...c,
+        name: args.new_name?.trim() || c.name,
+        amount: args.amount !== undefined ? toMinor(args.amount, s.unit) : c.amount,
+        frequency: args.frequency ?? c.frequency,
+        nextDebit: args.next_debit ?? c.nextDebit,
+      };
+      ok(await s.sb.from("commitments").update(rows.commitmentToRow(next)).eq("id", c.id));
+      return { updated: { ...next, amount: s.money(next.amount) } };
+    }),
+  );
+
+  server.registerTool(
+    "remove_commitment",
+    {
+      title: "Remove a recurring bill",
+      description: "Stop tracking a bill. Past payments for it stay in the history. Ask the user first.",
+      inputSchema: z.object({ name: z.string().min(1).max(60).describe("Current bill name") }),
+      annotations: { destructiveHint: true },
+    },
+    guard(async ({ name }: { name: string }, s) => {
+      const c = findCommitment(s.data.commitments, name);
+      ok(await s.sb.from("commitments").delete().eq("id", c.id));
+      return { removed: c.name };
+    }),
+  );
+
+  server.registerTool(
+    "remove_envelope",
+    {
+      title: "Remove an envelope",
+      description: "Delete an envelope. Its past payments and merchant mappings move to Flex. Ask the user first.",
+      inputSchema: z.object({ name: z.string().min(1).max(60).describe("Current envelope name") }),
+      annotations: { destructiveHint: true },
+    },
+    guard(async ({ name }: { name: string }, s) => {
+      const e = findEnvelope(s.data.envelopes, name);
+      if (!e) throw new ToolInputError(`No envelope called "${name}". Existing: ${s.data.envelopes.map((x) => x.name).join(", ") || "none"}.`);
+      ok(await s.sb.from("envelopes").delete().eq("id", e.id));
+      return { removed: e.name, effect: "Its past payments now count as Flex." };
+    }),
+  );
+
+  server.registerTool(
+    "update_plan",
+    {
+      title: "Change this month's plan",
+      description:
+        "Change the month-end target, expected pay (amount and pay day of the month), week start, or reset the starting bank and cash balances to what the user has right now (that becomes the new starting point, as in Settings). Confirm with the user first.",
+      inputSchema: z.object({
+        target: amount.optional().describe("Balance the user wants at month end"),
+        salary_amount: amount.optional(),
+        pay_day: z.number().int().min(1).max(31).optional().describe("Day of the month pay arrives"),
+        remove_salary: z.boolean().optional(),
+        week_start: z.enum(["monday", "sunday"]).optional(),
+        bank_balance: amount.optional().describe("Real bank balance right now"),
+        cash_in_hand: z.union([z.number().min(0), z.string()]).optional().describe("Cash right now; 0 if none"),
+      }),
+    },
+    guard(
+      async (
+        args: {
+          target?: number | string;
+          salary_amount?: number | string;
+          pay_day?: number;
+          remove_salary?: boolean;
+          week_start?: "monday" | "sunday";
+          bank_balance?: number | string;
+          cash_in_hand?: number | string;
+        },
+        s,
+      ) => {
+        const now = needsPlan(s);
+        const plan = s.data.plan;
+        if (!plan) throw new ToolInputError("No plan for this month yet.");
+        const patch: Partial<PlanInput> = {};
+        if (args.target !== undefined) patch.target = toMinor(args.target, s.unit);
+        if (args.week_start) patch.weekStart = args.week_start === "monday" ? 1 : 0;
+        if (args.remove_salary) patch.salary = null;
+        else if (args.salary_amount !== undefined || args.pay_day !== undefined) {
+          const salary = args.salary_amount !== undefined ? toMinor(args.salary_amount, s.unit) : plan.salary?.amount;
+          const day = args.pay_day ?? (plan.salary ? +plan.salary.date.slice(8) : undefined);
+          if (salary === undefined || day === undefined) throw new ToolInputError("Give both salary_amount and pay_day the first time.");
+          patch.salary = { amount: salary, date: dayInMonth(plan.month, day) };
+        }
+        if (args.bank_balance !== undefined || args.cash_in_hand !== undefined) {
+          patch.openingBank = args.bank_balance !== undefined ? toMinor(args.bank_balance, s.unit) : now.bank;
+          patch.openingCash =
+            args.cash_in_hand === undefined ? now.cash : Number(args.cash_in_hand) === 0 ? 0 : toMinor(args.cash_in_hand, s.unit);
+          patch.balanceAt = new Date().toISOString();
+        }
+        if (Object.keys(patch).length === 0) throw new ToolInputError("Nothing to change. Pass at least one field.");
+        ok(await s.sb.from("month_plans").update(rows.planToRow(patch)).eq("id", plan.id));
+        const after = summarize({ ...s.data, plan: enginePlan({ ...plan, ...patch }, s.data.profile) }, s.today);
+        return {
+          changed: Object.keys(patch),
+          safe_to_spend_today: s.money(after.safeToday),
+          projected_month_end: s.money(after.projected),
+          target_month_end: s.money(after.target),
+        };
+      },
+    ),
   );
 
   server.registerTool(

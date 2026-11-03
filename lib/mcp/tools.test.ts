@@ -28,7 +28,13 @@ it("advertises every Spency tool with a JSON input schema", async () => {
     "list_transactions",
     "log_cash",
     "reconcile",
+    "remove_commitment",
+    "remove_envelope",
+    "remove_transaction",
+    "update_commitment",
     "update_envelope",
+    "update_plan",
+    "update_transaction",
   ]);
   for (const t of tools) expect(t.inputSchema.type).toBe("object");
 });

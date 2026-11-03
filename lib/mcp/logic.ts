@@ -48,6 +48,20 @@ export function findEnvelope(envelopes: Envelope[], name: string): Envelope | un
   return envelopes.find((e) => e.name.toLowerCase() === n);
 }
 
+/** Exact envelope name (any case) or "Flex" → envelope id or null; anything else is a mistake worth telling Claude about. */
+export function envelopeIdByName(envelopes: Envelope[], name: string): string | null {
+  if (name.trim().toLowerCase() === "flex") return null;
+  const e = findEnvelope(envelopes, name);
+  if (!e) throw new ToolInputError(`No envelope called "${name}". Use one of: ${[...envelopes.map((x) => x.name), "Flex"].join(", ")}.`);
+  return e.id;
+}
+
+/** Payments dated before the plan's starting balance are already inside it, so they don't move any number. */
+export function beforePlanNote(occurredAt: string, planStart: string | null): string | undefined {
+  if (!planStart || Date.parse(occurredAt) > Date.parse(planStart)) return undefined;
+  return `Dated before this month's plan started (${planStart.slice(0, 10)}), so it's on record but doesn't change balances: the starting balance already included it.`;
+}
+
 export type TxnInput = {
   amount: number | string;
   merchant: string;
