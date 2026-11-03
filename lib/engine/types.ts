@@ -1,5 +1,5 @@
 /** Integer paise. Never a fraction. */
-export type Paise = number;
+export type Minor = number;
 /** Calendar date in Asia/Kolkata, `YYYY-MM-DD`. */
 export type ISODate = string;
 /** `YYYY-MM`. */
@@ -18,7 +18,7 @@ export type TxnKind = "expense" | "income" | "salary" | "transfer" | "adjustment
 export type Txn = {
   id: string;
   wallet: Wallet;
-  amount: Paise;
+  amount: Minor;
   direction: Direction;
   kind: TxnKind;
   merchant: string;
@@ -39,7 +39,7 @@ export type LeftoverRule = "rollover" | "to_flex" | "to_target";
 export type Envelope = {
   id: string;
   name: string;
-  weeklyLimit: Paise;
+  weeklyLimit: Minor;
   locked: boolean;
   leftover: LeftoverRule;
 };
@@ -49,19 +49,23 @@ export type Frequency = "weekly" | "monthly" | "yearly";
 export type Commitment = {
   id: string;
   name: string;
-  amount: Paise;
+  amount: Minor;
   frequency: Frequency;
   nextDebit: ISODate;
 };
 
 export type MonthPlan = {
   month: MonthKey;
-  openingBank: Paise;
-  openingCash: Paise;
+  /** ISO 4217, e.g. "INR", "USD". Decides the minor unit used for rounding. */
+  currency: string;
+  /** IANA zone, e.g. "Asia/Kolkata". Decides which calendar day a payment falls on. */
+  timeZone: string;
+  openingBank: Minor;
+  openingCash: Minor;
   /** Instant the opening balances were true; only confirmed txns after it move balances. */
   balanceAt: string;
-  target: Paise;
-  salary: { amount: Paise; date: ISODate } | null;
+  target: Minor;
+  salary: { amount: Minor; date: ISODate } | null;
   /** 0 = Sunday … 6 = Saturday. */
   weekStart: number;
 };

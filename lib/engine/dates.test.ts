@@ -6,15 +6,16 @@ import {
   diffDays,
   monthEnd,
   overlapDays,
-  toISTDate,
+  toLocalDate,
   weekEndOf,
   weekStartOf,
 } from "./dates";
 
 describe("dates", () => {
-  it("converts instants to IST calendar dates", () => {
-    expect(toISTDate("2026-11-02T19:00:00Z")).toBe("2026-11-03");
-    expect(toISTDate("2026-11-02T18:00:00Z")).toBe("2026-11-02");
+  it("converts instants to calendar dates in a time zone", () => {
+    expect(toLocalDate("2026-11-02T19:00:00Z", "Asia/Kolkata")).toBe("2026-11-03");
+    expect(toLocalDate("2026-11-02T18:00:00Z", "Asia/Kolkata")).toBe("2026-11-02");
+    expect(toLocalDate("2026-11-03T03:00:00Z", "America/Los_Angeles")).toBe("2026-11-02");
   });
 
   it("does day math across month and year boundaries", () => {

@@ -2,19 +2,20 @@ import type { ISODate, MonthKey } from "./types";
 
 const DAY_MS = 86_400_000;
 
-const istDate = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Asia/Kolkata",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
+const dayFormats = new Map<string, Intl.DateTimeFormat>();
 
-export function toISTDate(instant: string | Date): ISODate {
-  return istDate.format(typeof instant === "string" ? new Date(instant) : instant);
+/** Calendar day an instant falls on in `timeZone`. */
+export function toLocalDate(instant: string | Date, timeZone: string): ISODate {
+  let f = dayFormats.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    dayFormats.set(timeZone, f);
+  }
+  return f.format(typeof instant === "string" ? new Date(instant) : instant);
 }
 
-export function todayIST(now: Date = new Date()): ISODate {
-  return toISTDate(now);
+export function todayIn(timeZone: string, now: Date = new Date()): ISODate {
+  return toLocalDate(now, timeZone);
 }
 
 /** `YYYY-MM-DD` treated as a pure calendar day; UTC epoch math avoids DST/timezone drift. */

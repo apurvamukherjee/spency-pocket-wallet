@@ -1,19 +1,20 @@
-import { addDays, addMonths, monthEnd, overlapDays, toISTDate, weekStartOf } from "./dates";
-import type { Commitment, Envelope, ISODate, MonthPlan, Paise } from "./types";
+import { addDays, addMonths, monthEnd, overlapDays, toLocalDate, weekStartOf } from "./dates";
+import { unitOf } from "./money";
+import type { Commitment, Envelope, ISODate, MonthPlan, Minor } from "./types";
 
 /** The part of the month the plan covers: from the day balances were entered to month end. */
 export function planWindow(plan: MonthPlan): { start: ISODate; end: ISODate } {
-  return { start: toISTDate(plan.balanceAt), end: monthEnd(plan.month) };
+  return { start: toLocalDate(plan.balanceAt, plan.timeZone), end: monthEnd(plan.month) };
 }
 
-export function salaryInPlan(plan: MonthPlan): Paise {
+export function salaryInPlan(plan: MonthPlan): Minor {
   if (!plan.salary) return 0;
   const { start, end } = planWindow(plan);
   return plan.salary.date >= start && plan.salary.date <= end ? plan.salary.amount : 0;
 }
 
 /** Spendable = current balance − target (+ expected salary in the month). Cash on hand is spendable too. */
-export function spendable(plan: MonthPlan): Paise {
+export function spendable(plan: MonthPlan): Minor {
   return plan.openingBank + plan.openingCash - plan.target + salaryInPlan(plan);
 }
 
@@ -34,14 +35,14 @@ export function commitmentDates(c: Commitment, from: ISODate, to: ISODate): ISOD
   return out;
 }
 
-export function commitmentsInPlan(plan: MonthPlan, cs: Commitment[]): Paise {
+export function commitmentsInPlan(plan: MonthPlan, cs: Commitment[]): Minor {
   const { start, end } = planWindow(plan);
   return cs.reduce((sum, c) => sum + c.amount * commitmentDates(c, start, end).length, 0);
 }
 
-/** weekly_limit / 7 × days of that week inside [from, to], rounded to the rupee so budgets read cleanly. */
-export function weekAllocation(limit: Paise, weekStart: ISODate, from: ISODate, to: ISODate): Paise {
-  return Math.round((limit * overlapDays(weekStart, addDays(weekStart, 6), from, to)) / 700) * 100;
+/** weekly_limit / 7 × days of that week inside [from, to], rounded to a whole major unit so budgets read cleanly. */
+export function weekAllocation(limit: Minor, weekStart: ISODate, from: ISODate, to: ISODate, unit: number): Minor {
+  return Math.round((limit * overlapDays(weekStart, addDays(weekStart, 6), from, to)) / (7 * unit)) * unit;
 }
 
 export function weeksCovering(from: ISODate, to: ISODate, weekStartDay: number): ISODate[] {
@@ -50,16 +51,17 @@ export function weeksCovering(from: ISODate, to: ISODate, weekStartDay: number):
   return out;
 }
 
-export function envelopeAllocation(plan: MonthPlan, env: Envelope): Paise {
+export function envelopeAllocation(plan: MonthPlan, env: Envelope): Minor {
   const { start, end } = planWindow(plan);
+  const unit = unitOf(plan.currency);
   return weeksCovering(start, end, plan.weekStart).reduce(
-    (sum, w) => sum + weekAllocation(env.weeklyLimit, w, start, end),
+    (sum, w) => sum + weekAllocation(env.weeklyLimit, w, start, end, unit),
     0,
   );
 }
 
 /** Flex = spendable − commitments − monthly envelope allocation. Can be negative when the plan is over-committed. */
-export function flexBudget(plan: MonthPlan, envs: Envelope[], cs: Commitment[]): Paise {
+export function flexBudget(plan: MonthPlan, envs: Envelope[], cs: Commitment[]): Minor {
   return (
     spendable(plan) -
     commitmentsInPlan(plan, cs) -

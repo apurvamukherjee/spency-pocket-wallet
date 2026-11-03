@@ -1,4 +1,4 @@
-import type { Paise, Txn } from "./types";
+import type { Minor, Txn } from "./types";
 
 const TWO_MINUTES = 2 * 60_000;
 
@@ -11,7 +11,7 @@ export function normalizeMerchant(merchant: string): string {
  * Rejected txns never count, so a user can re-add something they dismissed by mistake.
  */
 export function findDuplicate(
-  candidate: { id?: string; upiRef: string | null; merchant: string; amount: Paise; occurredAt: string },
+  candidate: { id?: string; upiRef: string | null; merchant: string; amount: Minor; occurredAt: string },
   existing: Txn[],
 ): Txn | undefined {
   const at = Date.parse(candidate.occurredAt);

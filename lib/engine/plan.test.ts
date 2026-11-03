@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rupees } from "./money";
+import { major as rupees } from "./money";
 import {
   commitmentDates,
   commitmentsInPlan,
@@ -13,6 +13,8 @@ import type { Commitment, Envelope, MonthPlan } from "./types";
 
 const plan: MonthPlan = {
   month: "2026-11",
+  currency: "INR",
+  timeZone: "Asia/Kolkata",
   openingBank: rupees(80000),
   openingCash: 0,
   balanceAt: "2026-11-01T00:00:00+05:30",
@@ -53,9 +55,9 @@ describe("spendable", () => {
 describe("partial weeks across month boundaries", () => {
   it("prorates a straddling week by days inside the month", () => {
     // Week of Mon 26 Oct: only Sun 1 Nov falls in November.
-    expect(weekAllocation(rupees(700), "2026-10-26", "2026-11-01", "2026-11-30")).toBe(rupees(100));
+    expect(weekAllocation(rupees(700), "2026-10-26", "2026-11-01", "2026-11-30", 100)).toBe(rupees(100));
     // Week of Mon 30 Nov: only Mon 30 Nov falls in November.
-    expect(weekAllocation(rupees(700), "2026-11-30", "2026-11-01", "2026-11-30")).toBe(rupees(100));
+    expect(weekAllocation(rupees(700), "2026-11-30", "2026-11-01", "2026-11-30", 100)).toBe(rupees(100));
   });
 
   it("lists every week that touches the month", () => {

@@ -1,15 +1,15 @@
 import { addDays } from "./dates";
-import type { ISODate, Paise } from "./types";
+import type { ISODate, Minor } from "./types";
 
 export type ReconcileCheck = {
   date: ISODate;
-  computed: Paise;
-  actual: Paise;
+  computed: Minor;
+  actual: Minor;
   resolution: "matched" | "adjusted" | "ignored";
 };
 
 /** Positive = more in the bank than Spency knows about; negative = money unaccounted for. */
-export function reconcileGap(computed: Paise, actual: Paise): Paise {
+export function reconcileGap(computed: Minor, actual: Minor): Minor {
   return actual - computed;
 }
 
