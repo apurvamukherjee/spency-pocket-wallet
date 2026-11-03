@@ -41,6 +41,11 @@ export function CommitmentsView() {
       </section>
 
       <section>
+        {rows.length === 0 && (
+          <p className="rounded-[20px] border border-dashed border-line px-6 py-8 text-center text-sm text-muted">
+            No bills yet. Add rent, subscriptions and loan payments so Spency sets them aside first.
+          </p>
+        )}
         <ul className="divide-y divide-line">
           {rows.map(({ c, next }) => {
             const inDays = diffDays(s.today, next);
