@@ -12,6 +12,7 @@ import { useSession } from "@/lib/supabase/session";
 import { Segmented } from "@/components/ui/controls";
 import { Icon } from "@/components/ui/Icon";
 import { Logo } from "@/components/ui/Logo";
+import { ResendForm } from "./ResendForm";
 
 type Mode = "signin" | "signup" | "reset";
 
@@ -131,78 +132,86 @@ function AuthForm({ mode, next, onForgot, onBack }: { mode: Mode; next: string; 
   }
 
   return (
-    <form action={action} className="space-y-4">
-      <input type="hidden" name="next" value={next} />
-      {mode === "signup" && (
-        <label className="block space-y-1.5">
-          <span className="label">Your name</span>
-          <input name="name" className="field" autoComplete="name" maxLength={80} placeholder="Optional" />
-        </label>
-      )}
-      <label className="block space-y-1.5">
-        <span className="label">Email</span>
-        <input name="email" type="email" required autoComplete="email" defaultValue={state?.email} className="field" />
-      </label>
-      {mode !== "reset" && (
-        <label className="block space-y-1.5">
-          <span className="flex items-baseline justify-between">
-            <span className="label">Password</span>
-            {mode === "signin" && (
-              <button type="button" onClick={onForgot} className="text-xs text-muted hover:text-fg">
-                Forgot?
-              </button>
-            )}
-          </span>
-          <span className="relative block">
-            <input
-              name="password"
-              type={showPassword ? "text" : "password"}
-              required
-              minLength={mode === "signup" ? 8 : undefined}
-              autoComplete={mode === "signup" ? "new-password" : "current-password"}
-              className="field pr-16"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted hover:text-fg"
-              aria-pressed={showPassword}
-            >
-              {showPassword ? "Hide" : "Show"}
-            </button>
-          </span>
-          {mode === "signup" && <span className="block text-xs text-faint">At least 8 characters.</span>}
-        </label>
-      )}
-      {mode === "signup" && defaults && (
-        <>
+    <>
+      <form action={action} className="space-y-4">
+        <input type="hidden" name="next" value={next} />
+        {mode === "signup" && (
           <label className="block space-y-1.5">
-            <span className="label">Currency</span>
-            <select name="currency" defaultValue={defaults.currency} className="field">
-              {currencies.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
+            <span className="label">Your name</span>
+            <input name="name" className="field" autoComplete="name" maxLength={80} placeholder="Optional" />
           </label>
-          <input type="hidden" name="locale" value={defaults.locale} />
-          <input type="hidden" name="timeZone" value={defaults.timeZone} />
-        </>
-      )}
-      {state?.error && (
-        <p role="alert" className="text-sm text-bad">
-          {state.error}
-        </p>
-      )}
-      <button type="submit" disabled={pending} className="btn btn-primary w-full py-3">
-        {pending ? "One moment…" : mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
-      </button>
-      {mode === "reset" && (
-        <button type="button" onClick={onBack} className="w-full text-sm text-muted hover:text-fg">
-          Back to sign in
+        )}
+        <label className="block space-y-1.5">
+          <span className="label">Email</span>
+          <input name="email" type="email" required autoComplete="email" defaultValue={state?.email} className="field" />
+        </label>
+        {mode !== "reset" && (
+          <label className="block space-y-1.5">
+            <span className="flex items-baseline justify-between">
+              <span className="label">Password</span>
+              {mode === "signin" && (
+                <button type="button" onClick={onForgot} className="text-xs text-muted hover:text-fg">
+                  Forgot?
+                </button>
+              )}
+            </span>
+            <span className="relative block">
+              <input
+                name="password"
+                type={showPassword ? "text" : "password"}
+                required
+                minLength={mode === "signup" ? 8 : undefined}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                className="field pr-16"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted hover:text-fg"
+                aria-pressed={showPassword}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </span>
+            {mode === "signup" && <span className="block text-xs text-faint">At least 8 characters.</span>}
+          </label>
+        )}
+        {mode === "signup" && defaults && (
+          <>
+            <label className="block space-y-1.5">
+              <span className="label">Currency</span>
+              <select name="currency" defaultValue={defaults.currency} className="field">
+                {currencies.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <input type="hidden" name="locale" value={defaults.locale} />
+            <input type="hidden" name="timeZone" value={defaults.timeZone} />
+          </>
+        )}
+        {state?.error && (
+          <p role="alert" className="text-sm text-bad">
+            {state.error}
+          </p>
+        )}
+        <button type="submit" disabled={pending} className="btn btn-primary w-full py-3">
+          {pending ? "One moment…" : mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
         </button>
+        {mode === "reset" && (
+          <button type="button" onClick={onBack} className="w-full text-sm text-muted hover:text-fg">
+            Back to sign in
+          </button>
+        )}
+      </form>
+      {state?.unconfirmed && (
+        <div className="space-y-2 border-t border-line pt-4">
+          <p className="text-sm text-muted">Didn&apos;t get the email, or the link expired?</p>
+          <ResendForm email={state.email} />
+        </div>
       )}
-    </form>
+    </>
   );
 }
