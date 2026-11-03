@@ -52,7 +52,7 @@ function cloudActions(sb: Supabase, qc: QueryClient, key: readonly unknown[], us
         (d) => r.updateTxn(d, id, patch),
         async () => {
           const res = await sb.from("transactions").update(rows.txnPatchToRow(patch)).eq("id", id);
-          if (res.error || !before || patch.envelopeId === undefined || patch.envelopeId === before.envelopeId) return res;
+          if (res.error || !before || patch.envelopeId === undefined || patch.commitmentId || patch.envelopeId === before.envelopeId) return res;
           return sb
             .from("merchant_memory")
             .upsert({ merchant: normalizeMerchant(patch.merchant ?? before.merchant), envelope_id: patch.envelopeId });

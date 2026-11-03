@@ -1,4 +1,4 @@
-import { recallEnvelope, rememberMerchant } from "@/lib/engine/inbox";
+import { defaultEnvelopeId, recallEnvelope, rememberMerchant } from "@/lib/engine/inbox";
 import type { ReconcileCheck } from "@/lib/engine/reconcile";
 import type { Commitment, Envelope, Txn } from "@/lib/engine/types";
 import type { AppData, NewTxn, PlanInput, ProfilePatch, TxnPatch } from "./types";
@@ -8,7 +8,7 @@ import type { AppData, NewTxn, PlanInput, ProfilePatch, TxnPatch } from "./types
 const upsert = <T extends { id: string }>(list: T[], item: T) =>
   list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item];
 
-/** Fills defaults and applies merchant memory when the caller didn't pick a category. */
+/** Fills defaults; without a picked category it uses merchant memory, then the user's default envelope (not Flex). */
 export function buildTxn(d: AppData, t: NewTxn, id: string, now: string): Txn {
   return {
     id,
@@ -21,17 +21,20 @@ export function buildTxn(d: AppData, t: NewTxn, id: string, now: string): Txn {
     upiRef: null,
     createdAt: now,
     ...t,
-    envelopeId: t.envelopeId === undefined ? (recallEnvelope(d.memory, t.merchant) ?? null) : t.envelopeId,
+    envelopeId:
+      t.envelopeId !== undefined || t.commitmentId
+        ? (t.envelopeId ?? null)
+        : (recallEnvelope(d.memory, t.merchant) ?? defaultEnvelopeId(d.envelopes, d.profile.defaultEnvelopeId)),
   };
 }
 
 export const addTxn = (d: AppData, txn: Txn): AppData => ({ ...d, txns: [...d.txns, txn] });
 
-/** Changing a category teaches merchant memory. */
+/** Changing to another envelope (or Flex) teaches merchant memory; filing under a bill doesn't. */
 export function updateTxn(d: AppData, id: string, patch: TxnPatch): AppData {
   const txn = d.txns.find((t) => t.id === id);
   const memory =
-    txn && patch.envelopeId !== undefined && patch.envelopeId !== txn.envelopeId
+    txn && patch.envelopeId !== undefined && !patch.commitmentId && patch.envelopeId !== txn.envelopeId
       ? rememberMerchant(d.memory, patch.merchant ?? txn.merchant, patch.envelopeId)
       : d.memory;
   return { ...d, memory, txns: d.txns.map((t) => (t.id === id ? { ...t, ...patch } : t)) };

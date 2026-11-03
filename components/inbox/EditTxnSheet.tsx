@@ -6,6 +6,7 @@ import type { Txn, Wallet } from "@/lib/engine/types";
 import { useUI } from "@/lib/ui";
 import { Segmented } from "@/components/ui/controls";
 import { Sheet } from "@/components/ui/Sheet";
+import type { Category } from "@/lib/data/category";
 import { CategoryPicker } from "./CategoryPicker";
 
 export function EditTxnSheet() {
@@ -20,20 +21,20 @@ export function EditTxnSheet() {
 }
 
 function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
-  const { envelopes } = useAppData();
+  const { envelopes, commitments } = useAppData();
   const { updateTxn, setStatus } = useActions();
   const fmt = useFormat();
 
   const [amountText, setAmountText] = useState(fmt.input(txn.amount));
   const [merchant, setMerchant] = useState(txn.merchant);
-  const [envelopeId, setEnvelopeId] = useState(txn.envelopeId);
+  const [category, setCategory] = useState<Category>({ envelopeId: txn.envelopeId, commitmentId: txn.commitmentId });
   const [wallet, setWallet] = useState<Wallet>(txn.wallet);
   const amount = fmt.parse(amountText);
   const pending = txn.status === "pending";
 
   function save(status?: Txn["status"]) {
     if (!amount) return;
-    updateTxn(txn.id, { amount, merchant: merchant.trim() || txn.merchant, envelopeId, wallet });
+    updateTxn(txn.id, { amount, merchant: merchant.trim() || txn.merchant, ...category, wallet });
     if (status) setStatus([txn.id], status);
     onDone();
   }
@@ -58,8 +59,11 @@ function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
       </div>
       <div className="space-y-2">
         <span className="label">Category</span>
-        <CategoryPicker envelopes={envelopes} value={envelopeId} onChange={setEnvelopeId} />
-        {envelopeId !== txn.envelopeId && (
+        <CategoryPicker envelopes={envelopes} bills={commitments} value={category} onChange={setCategory} />
+        {category.commitmentId && category.commitmentId !== txn.commitmentId && (
+          <p className="text-xs text-faint">Counts as paying this bill for the month.</p>
+        )}
+        {!category.commitmentId && category.envelopeId !== txn.envelopeId && (
           <p className="text-xs text-faint">Future payments to {merchant || "this merchant"} will go here too.</p>
         )}
       </div>

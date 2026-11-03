@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useActions, useAppData, useFormat } from "@/lib/data/context";
-import { recallEnvelope } from "@/lib/engine/inbox";
+import type { Category } from "@/lib/data/category";
+import { defaultEnvelopeId, recallEnvelope } from "@/lib/engine/inbox";
 import type { Wallet } from "@/lib/engine/types";
 import { useUI } from "@/lib/ui";
 import { CategoryPicker } from "@/components/inbox/CategoryPicker";
@@ -22,7 +23,7 @@ export function QuickAdd() {
 type Kind = "spend" | "withdraw";
 
 function QuickAddForm({ onDone }: { onDone: () => void }) {
-  const { envelopes, memory } = useAppData();
+  const { envelopes, commitments, memory, profile } = useAppData();
   const { addTxn } = useActions();
   const fmt = useFormat();
 
@@ -30,11 +31,14 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
   const [amountText, setAmountText] = useState("");
   const [merchant, setMerchant] = useState("");
   const [wallet, setWallet] = useState<Wallet>("bank");
-  const [picked, setPicked] = useState<{ id: string | null } | null>(null);
+  const [picked, setPicked] = useState<Category | null>(null);
 
   const amount = fmt.parse(amountText);
   const remembered = recallEnvelope(memory, merchant);
-  const envelopeId = picked ? picked.id : (remembered ?? null);
+  const category: Category = picked ?? {
+    envelopeId: remembered !== undefined ? remembered : defaultEnvelopeId(envelopes, profile.defaultEnvelopeId),
+    commitmentId: null,
+  };
 
   function save(e: React.FormEvent) {
     e.preventDefault();
@@ -42,7 +46,7 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
     addTxn(
       kind === "withdraw"
         ? { amount, wallet: "bank", kind: "transfer", merchant: "Cash withdrawal", envelopeId: null, occurredAt: new Date().toISOString() }
-        : { amount, wallet, merchant: merchant.trim() || "Quick spend", envelopeId, occurredAt: new Date().toISOString() },
+        : { amount, wallet, merchant: merchant.trim() || "Quick spend", ...category, occurredAt: new Date().toISOString() },
     );
     onDone();
   }
@@ -77,7 +81,7 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
       {kind === "spend" ? (
         <>
           <input className="field" placeholder="Where? (optional)" value={merchant} onChange={(e) => setMerchant(e.target.value)} />
-          <CategoryPicker envelopes={envelopes} value={envelopeId} onChange={(id) => setPicked({ id })} />
+          <CategoryPicker envelopes={envelopes} bills={commitments} value={category} onChange={setPicked} />
           <Segmented<Wallet>
             label="Paid from"
             value={wallet}

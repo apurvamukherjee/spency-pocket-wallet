@@ -3,11 +3,11 @@
 import { useMemo, useState } from "react";
 import { useAppData, useFormat, useToday } from "@/lib/data/context";
 import { useUI } from "@/lib/ui";
-import { categoryName } from "@/components/inbox/CategoryPicker";
+import { categoryLabel } from "@/lib/data/category";
 
 /** Confirmed payments, newest first. Tap one to fix or remove it. */
 export function RecentActivity() {
-  const { txns, envelopes } = useAppData();
+  const { txns, envelopes, commitments } = useAppData();
   const fmt = useFormat();
   const today = useToday();
   const edit = useUI((s) => s.edit);
@@ -29,8 +29,7 @@ export function RecentActivity() {
         <>
           <ul className="divide-y divide-line">
             {confirmed.slice(0, count).map((t) => {
-              const label =
-                t.kind === "transfer" ? "Cash withdrawal" : t.kind === "adjustment" ? "Adjustment" : t.commitmentId ? "Bill" : categoryName(envelopes, t.envelopeId);
+              const label = categoryLabel(envelopes, commitments, t);
               return (
                 <li key={t.id}>
                   <button type="button" onClick={() => edit(t.id)} className="flex w-full items-center justify-between gap-4 py-3 text-left">
