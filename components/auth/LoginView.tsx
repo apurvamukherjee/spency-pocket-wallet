@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useActionState, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { type AuthState, requestReset, signIn, signUp } from "@/app/(auth)/actions";
 import { useDemoStore } from "@/lib/data/demo";
+import { safeNext } from "@/lib/safe-next";
 import { currencyOptions, detectDefaults } from "@/lib/locale";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import { useSession } from "@/lib/supabase/session";
@@ -25,6 +26,7 @@ export function LoginView() {
   const initial = params.get("mode");
   const [mode, setMode] = useState<Mode>(initial === "signup" || initial === "reset" ? initial : "signin");
   const router = useRouter();
+  const next = safeNext(params.get("next"));
 
   function tryDemo() {
     useDemoStore.getState().enter();
@@ -52,7 +54,10 @@ export function LoginView() {
   return (
     <div className="space-y-8">
       <Brand />
-      <SignedInRedirect />
+      <SignedInRedirect to={next} />
+      {next.startsWith("/oauth/") && (
+        <p className="rounded-xl bg-accent/10 px-3 py-2 text-sm text-accent">Sign in to connect Claude to your Spency account.</p>
+      )}
       <div>
         <h1 className="text-2xl font-medium tracking-tight">{TITLES[mode].title}</h1>
         <p className="mt-1.5 text-sm text-muted">{TITLES[mode].sub}</p>
@@ -73,7 +78,7 @@ export function LoginView() {
           ]}
         />
       )}
-      <AuthForm key={mode} mode={mode} onForgot={() => setMode("reset")} onBack={() => setMode("signin")} />
+      <AuthForm key={mode} mode={mode} next={next} onForgot={() => setMode("reset")} onBack={() => setMode("signin")} />
       <div className="relative py-1 text-center text-xs text-faint before:absolute before:inset-x-0 before:top-1/2 before:h-px before:bg-line">
         <span className="relative bg-bg px-3">or</span>
       </div>
@@ -92,12 +97,12 @@ function Brand() {
   );
 }
 
-function SignedInRedirect() {
+function SignedInRedirect({ to }: { to: string }) {
   const session = useSession();
   const router = useRouter();
   useEffect(() => {
-    if (session) router.replace("/");
-  }, [session, router]);
+    if (session) router.replace(to);
+  }, [session, router, to]);
   return null;
 }
 
@@ -105,7 +110,7 @@ const noop = () => () => {};
 
 const ACTIONS = { signin: signIn, signup: signUp, reset: requestReset } satisfies Record<Mode, (s: AuthState, f: FormData) => Promise<AuthState>>;
 
-function AuthForm({ mode, onForgot, onBack }: { mode: Mode; onForgot: () => void; onBack: () => void }) {
+function AuthForm({ mode, next, onForgot, onBack }: { mode: Mode; next: string; onForgot: () => void; onBack: () => void }) {
   const [state, action, pending] = useActionState(ACTIONS[mode], null);
   // Browser locale/zone only exist on the client; the server renders the form without them.
   const onClient = useSyncExternalStore(noop, () => true, () => false);
@@ -127,6 +132,7 @@ function AuthForm({ mode, onForgot, onBack }: { mode: Mode; onForgot: () => void
 
   return (
     <form action={action} className="space-y-4">
+      <input type="hidden" name="next" value={next} />
       {mode === "signup" && (
         <label className="block space-y-1.5">
           <span className="label">Your name</span>

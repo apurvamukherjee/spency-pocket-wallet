@@ -3,6 +3,7 @@
 import type { AuthError } from "@supabase/supabase-js";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { safeNext } from "@/lib/safe-next";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export type AuthState = { error?: string; notice?: string; email?: string } | null;
@@ -43,7 +44,7 @@ export async function signIn(_: AuthState, form: FormData): Promise<AuthState> {
   const sb = await supabaseServer();
   const { error } = await sb.auth.signInWithPassword({ email, password });
   if (error) return { error: friendly(error), email };
-  redirect("/");
+  redirect(safeNext(field(form, "next")));
 }
 
 export async function signUp(_: AuthState, form: FormData): Promise<AuthState> {
@@ -57,7 +58,7 @@ export async function signUp(_: AuthState, form: FormData): Promise<AuthState> {
     email,
     password,
     options: {
-      emailRedirectTo: `${await origin()}/auth/confirm?next=/`,
+      emailRedirectTo: `${await origin()}/auth/confirm?next=${encodeURIComponent(safeNext(field(form, "next")))}`,
       // Read by the handle_new_user trigger, which validates each value.
       data: {
         display_name: field(form, "name"),
@@ -68,7 +69,7 @@ export async function signUp(_: AuthState, form: FormData): Promise<AuthState> {
     },
   });
   if (error) return { error: friendly(error), email };
-  if (data.session) redirect("/");
+  if (data.session) redirect(safeNext(field(form, "next")));
   return { notice: `We sent a confirmation link to ${email}. Open it to finish creating your account.`, email };
 }
 
