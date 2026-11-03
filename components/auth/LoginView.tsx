@@ -10,6 +10,7 @@ import { supabaseConfigured } from "@/lib/supabase/env";
 import { useSession } from "@/lib/supabase/session";
 import { Segmented } from "@/components/ui/controls";
 import { Icon } from "@/components/ui/Icon";
+import { Logo } from "@/components/ui/Logo";
 
 type Mode = "signin" | "signup" | "reset";
 
@@ -84,7 +85,11 @@ export function LoginView() {
 }
 
 function Brand() {
-  return <p className="text-[17px] font-semibold tracking-tight lg:hidden">spency</p>;
+  return (
+    <p className="lg:hidden">
+      <Logo size={26} />
+    </p>
+  );
 }
 
 function SignedInRedirect() {

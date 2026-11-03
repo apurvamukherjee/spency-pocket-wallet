@@ -1,8 +1,10 @@
+import { Logo } from "@/components/ui/Logo";
+
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
-      <aside className="relative hidden overflow-hidden border-r border-line bg-surface lg:flex lg:flex-col lg:justify-between lg:p-14">
-        <p className="text-[17px] font-semibold tracking-tight">spency</p>
+      <aside className="auth-glow relative hidden overflow-hidden border-r border-line bg-surface lg:flex lg:flex-col lg:justify-between lg:p-14">
+        <Logo size={28} />
         <div className="max-w-md">
           <p className="text-sm text-muted">Safe to spend today</p>
           <p className="mt-1 text-7xl font-medium tracking-tighter tabular-nums">1,240</p>

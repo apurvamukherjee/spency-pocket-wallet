@@ -142,6 +142,31 @@
   }
 }
 
+/* Sign-in brand panel: a soft accent glow over a faint grid that fades out. Children sit above it. */
+.auth-glow > * {
+  position: relative;
+  z-index: 1;
+}
+.auth-glow::before,
+.auth-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.auth-glow::before {
+  background:
+    radial-gradient(60% 50% at 90% 10%, color-mix(in oklch, var(--color-accent) 18%, transparent), transparent 70%),
+    radial-gradient(45% 40% at 0% 100%, color-mix(in oklch, var(--color-ok) 9%, transparent), transparent 70%);
+}
+.auth-glow::after {
+  background-image:
+    linear-gradient(color-mix(in oklch, var(--color-fg) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklch, var(--color-fg) 4%, transparent) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(70% 70% at 60% 40%, black, transparent);
+}
+
 /* Sheet: bottom sheet on phones, centered panel on wider screens. */
 dialog.sheet {
   margin: auto auto 0;

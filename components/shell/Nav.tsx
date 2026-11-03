@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useAppData, useProfile } from "@/lib/data/context";
 import { useUI } from "@/lib/ui";
 import { Icon, type IconName } from "@/components/ui/Icon";
+import { Logo } from "@/components/ui/Logo";
 
 const NAV: { href: string; label: string; icon: IconName; mobile: boolean }[] = [
   { href: "/", label: "Home", icon: "home", mobile: true },
@@ -46,8 +47,8 @@ export function Sidebar() {
   const openQuickAdd = useUI((s) => s.openQuickAdd);
   return (
     <nav aria-label="Main" className="sticky top-0 hidden h-dvh flex-col gap-1 px-4 py-8 lg:flex">
-      <Link href="/" className="mb-8 px-3 text-[17px] font-semibold tracking-tight">
-        spency
+      <Link href="/" className="mb-8 px-3" aria-label="Spency home">
+        <Logo />
       </Link>
       {NAV.map((n) => (
         <Link
