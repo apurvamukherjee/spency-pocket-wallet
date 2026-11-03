@@ -56,6 +56,11 @@ export function daysInMonth(m: MonthKey): number {
   return new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).getUTCDate();
 }
 
+/** Day of month → date in that month, clamped to short months (31 in February → the 28th or 29th). */
+export function dayInMonth(m: MonthKey, day: number): ISODate {
+  return `${m}-${String(Math.min(Math.max(1, Math.trunc(day)), daysInMonth(m))).padStart(2, "0")}`;
+}
+
 export function monthStart(m: MonthKey): ISODate {
   return `${m}-01`;
 }

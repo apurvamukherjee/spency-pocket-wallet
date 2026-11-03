@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addDays,
   addMonths,
+  dayInMonth,
   daysInMonth,
   diffDays,
   monthEnd,
@@ -41,6 +42,13 @@ describe("dates", () => {
   it("counts overlap", () => {
     expect(overlapDays("2026-10-26", "2026-11-01", "2026-11-01", "2026-11-30")).toBe(1);
     expect(overlapDays("2026-10-01", "2026-10-05", "2026-11-01", "2026-11-30")).toBe(0);
+  });
+
+  it("turns a day of the month into a date, clamped to the month", () => {
+    expect(dayInMonth("2026-11", 28)).toBe("2026-11-28");
+    expect(dayInMonth("2026-02", 31)).toBe("2026-02-28");
+    expect(dayInMonth("2028-02", 30)).toBe("2028-02-29");
+    expect(dayInMonth("2026-11", 1)).toBe("2026-11-01");
   });
 
   it("steps months keeping the anchor day", () => {
