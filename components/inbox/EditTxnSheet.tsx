@@ -84,9 +84,21 @@ function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
             </button>
           </>
         ) : (
-          <button type="submit" disabled={!amount} className="btn btn-primary w-full">
-            Save
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setStatus([txn.id], "rejected");
+                onDone();
+              }}
+              className="btn btn-ghost text-bad"
+            >
+              Remove
+            </button>
+            <button type="submit" disabled={!amount} className="btn btn-primary flex-1">
+              Save
+            </button>
+          </>
         )}
       </div>
     </form>
