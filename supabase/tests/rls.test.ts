@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -34,7 +34,10 @@ beforeAll(async () => {
     grant execute on function auth.uid() to anon, authenticated;
     alter default privileges in schema public grant all on tables to anon, authenticated;
   `);
-  await db.exec(await readFile(new URL("../migrations/20261103000000_init.sql", import.meta.url), "utf8"));
+  const dir = new URL("../migrations/", import.meta.url);
+  for (const f of (await readdir(dir)).filter((n) => n.endsWith(".sql")).sort()) {
+    await db.exec(await readFile(new URL(f, dir), "utf8"));
+  }
   await db.exec(`
     insert into auth.users values ('${A}', 'a@example.com', '{"display_name":"Asha","currency":"EUR","locale":"de-DE","time_zone":"Europe/Berlin"}');
     insert into auth.users values ('${B}', 'b@example.com', '{"currency":"not-a-code","locale":"x","time_zone":""}');

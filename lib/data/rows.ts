@@ -44,6 +44,8 @@ export const planFromRow = (r: MonthPlanRow): StoredPlan => ({
   target: r.target,
   salary: r.salary_amount !== null && r.salary_date !== null ? { amount: r.salary_amount, date: r.salary_date } : null,
   weekStart: r.week_start,
+  // Older rows (before the column existed) come back without it.
+  unpaidBills: r.unpaid_bills ?? [],
 });
 
 export function planToRow(p: Partial<PlanInput>): Update<"month_plans"> {
@@ -58,6 +60,7 @@ export function planToRow(p: Partial<PlanInput>): Update<"month_plans"> {
     out.salary_date = p.salary?.date ?? null;
   }
   if (p.weekStart !== undefined) out.week_start = p.weekStart;
+  if (p.unpaidBills !== undefined) out.unpaid_bills = p.unpaidBills;
   return out;
 }
 
@@ -70,6 +73,7 @@ export const planToInsert = (p: PlanInput): Insert<"month_plans"> => ({
   salary_amount: p.salary?.amount ?? null,
   salary_date: p.salary?.date ?? null,
   week_start: p.weekStart,
+  unpaid_bills: p.unpaidBills ?? [],
 });
 
 export const envelopeFromRow = (r: EnvelopeRow): Envelope => ({
