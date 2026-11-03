@@ -39,9 +39,9 @@ export function commitmentsInPlan(plan: MonthPlan, cs: Commitment[]): Paise {
   return cs.reduce((sum, c) => sum + c.amount * commitmentDates(c, start, end).length, 0);
 }
 
-/** weekly_limit / 7 × days of that week inside [from, to]. */
+/** weekly_limit / 7 × days of that week inside [from, to], rounded to the rupee so budgets read cleanly. */
 export function weekAllocation(limit: Paise, weekStart: ISODate, from: ISODate, to: ISODate): Paise {
-  return Math.round((limit * overlapDays(weekStart, addDays(weekStart, 6), from, to)) / 7);
+  return Math.round((limit * overlapDays(weekStart, addDays(weekStart, 6), from, to)) / 700) * 100;
 }
 
 export function weeksCovering(from: ISODate, to: ISODate, weekStartDay: number): ISODate[] {
