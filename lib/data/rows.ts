@@ -145,6 +145,8 @@ export function txnPatchToRow(p: TxnPatch): Update<"transactions"> {
   if (p.envelopeId !== undefined) out.envelope_id = p.envelopeId;
   if (p.wallet !== undefined) out.wallet = p.wallet;
   if (p.note !== undefined) out.note = p.note;
+  if (p.occurredAt !== undefined) out.occurred_at = p.occurredAt;
+  if (p.direction !== undefined) out.direction = p.direction;
   return out;
 }
 

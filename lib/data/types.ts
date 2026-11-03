@@ -32,7 +32,7 @@ export type AppData = {
 export type NewTxn = Pick<Txn, "amount" | "wallet" | "merchant" | "occurredAt"> &
   Partial<Pick<Txn, "kind" | "direction" | "envelopeId" | "commitmentId" | "note" | "source" | "status" | "upiRef">>;
 
-export type TxnPatch = Partial<Pick<Txn, "amount" | "merchant" | "envelopeId" | "wallet" | "note">>;
+export type TxnPatch = Partial<Pick<Txn, "amount" | "merchant" | "envelopeId" | "wallet" | "note" | "occurredAt" | "direction">>;
 
 export type ProfilePatch = Partial<Omit<Profile, "email">>;
 
