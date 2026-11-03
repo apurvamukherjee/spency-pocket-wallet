@@ -3,11 +3,11 @@
 Read `SPEC.md` before any work. It is the source of truth. Phases are gated: finish one, stop, and wait for review before starting the next.
 
 ## Non-negotiables
-- Money is integer paise everywhere. No floats, no `number` arithmetic that can produce fractions without explicit rounding.
+- Money is integer minor units of the plan currency everywhere (cents, paise, yen; see `unitOf`). No floats.
 - Never ask for or store bank credentials.
 - Every balance shown must be derivable from confirmed transactions + the month plan.
 - `lib/engine/` is pure TypeScript: no React, Next, Zustand, or I/O imports.
-- Dates are IST calendar dates (`YYYY-MM-DD` strings) in the engine.
+- Dates are calendar dates (`YYYY-MM-DD`) in the plan's time zone (`MonthPlan.timeZone`). Never hard-code a zone, currency or locale.
 - Copy is supportive, never guilt-inducing.
 
 ## Engine decisions (agreed in Phase 1 plan)
@@ -29,7 +29,9 @@ Read `SPEC.md` before any work. It is the source of truth. Phases are gated: fin
 @AGENTS.md
 
 ## Product decisions from the user (override SPEC.md)
-- Dark mode only. No light theme, no toggle.
+- Dark and light themes; dark is the default. The toggle lives in Settings only.
+- Must work in every country: currency, number format, time zone and week start come from the user's profile.
+- Open source (MIT). Keep LICENSE, CONTRIBUTING.md, CHANGELOG.md, issue templates and CI current as features land; run the 16-item launch audit after Phase 4.
 - UI must be clean, modern and minimal: no template look, no decorative filler, no emoji-heavy copy, no gradients-for-the-sake-of-it.
 - Single repo holds everything: the Next.js app serves UI, API routes and the MCP server; the engine lives in `lib/engine`. Don't split into workspace packages.
 - Testing cadence: light spot-checks while building; one deep end-to-end test pass after all phases are done. Don't re-run full verification after every step.
