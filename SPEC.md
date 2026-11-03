@@ -117,6 +117,8 @@ Include clear tool descriptions so Claude knows to extract merchant, amount, tim
 
 **Phase 4:** Polish: pattern detection, rebalance suggestions, empty states, loading states, accessibility pass, Vercel deployment notes.
 
+Added by the user for Phase 4: a **hard reset** in Settings so they can start fresh. It wipes all their data (transactions, envelopes, bills, month plans, merchant memory, reconcile checks) behind a typed confirmation, keeps the account, profile and connected apps, then drops them into onboarding.
+
 ## Non-negotiables
 
 - Never ask for or store bank credentials. Spency only knows what the user or Claude tells it.
