@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSpency } from "@/lib/store";
+import { useAppData, useProfile } from "@/lib/data/context";
 import { useUI } from "@/lib/ui";
 import { Icon, type IconName } from "@/components/ui/Icon";
 
@@ -16,7 +16,26 @@ const NAV: { href: string; label: string; icon: IconName; mobile: boolean }[] = 
 ];
 
 function usePendingCount() {
-  return useSpency((s) => s.data?.txns.filter((t) => t.status === "pending").length ?? 0);
+  return useAppData().txns.filter((t) => t.status === "pending").length;
+}
+
+export function initials(name: string, email: string | null): string {
+  const source = name.trim() || email?.split("@")[0] || "?";
+  const parts = source.split(/[\s._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "?") + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
+export function Avatar({ size = 36 }: { size?: number }) {
+  const { displayName, email } = useProfile();
+  return (
+    <span
+      aria-hidden
+      style={{ width: size, height: size, fontSize: size * 0.38 }}
+      className="grid shrink-0 place-items-center rounded-full bg-accent/15 font-medium text-accent"
+    >
+      {initials(displayName, email)}
+    </span>
+  );
 }
 
 const isActive = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
@@ -48,7 +67,21 @@ export function Sidebar() {
         <Icon name="plus" size={18} />
         Add spend
       </button>
+      <ProfileChip />
     </nav>
+  );
+}
+
+function ProfileChip() {
+  const { displayName, email } = useProfile();
+  return (
+    <Link href="/settings" className="mt-auto flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-surface">
+      <Avatar size={32} />
+      <span className="min-w-0">
+        <span className="block truncate text-sm">{displayName || "Your profile"}</span>
+        <span className="block truncate text-xs text-muted">{email ?? "Demo mode"}</span>
+      </span>
+    </Link>
   );
 }
 
