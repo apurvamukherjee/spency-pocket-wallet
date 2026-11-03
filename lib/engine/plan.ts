@@ -35,6 +35,16 @@ export function commitmentDates(c: Commitment, from: ISODate, to: ISODate): ISOD
   return out;
 }
 
+/** The bill whose next debit falls soonest on or after `today`, or null when none is due within a year. */
+export function nextBill(cs: Commitment[], today: ISODate): { commitment: Commitment; date: ISODate } | null {
+  let best: { commitment: Commitment; date: ISODate } | null = null;
+  for (const commitment of cs) {
+    const date = commitmentDates(commitment, today, addDays(today, 365))[0];
+    if (date && (!best || date < best.date)) best = { commitment, date };
+  }
+  return best;
+}
+
 /** What a bill costs per month on average: weekly × 52 / 12, monthly as is, yearly / 12. */
 export function monthlyEquivalent(c: Commitment): Minor {
   if (c.frequency === "weekly") return Math.round((c.amount * 52) / 12);

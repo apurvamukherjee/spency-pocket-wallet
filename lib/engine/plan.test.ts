@@ -4,6 +4,7 @@ import {
   commitmentDates,
   commitmentsInPlan,
   monthlyEquivalent,
+  nextBill,
   envelopeAllocation,
   flexBudget,
   spendable,
@@ -85,6 +86,13 @@ describe("partial weeks across month boundaries", () => {
 });
 
 describe("commitments", () => {
+  it("nextBill picks the soonest debit on or after today", () => {
+    const rent = commitment({ name: "Rent", nextDebit: "2026-11-05" });
+    const phone = commitment({ id: "p", name: "Phone", nextDebit: "2026-11-20" });
+    expect(nextBill([phone, rent], "2026-11-03")).toEqual({ commitment: rent, date: "2026-11-05" });
+    expect(nextBill([phone, rent], "2026-11-06")).toEqual({ commitment: phone, date: "2026-11-20" });
+    expect(nextBill([], "2026-11-03")).toBeNull();
+  });
   it("expands monthly occurrences inside the window, including ones before nextDebit", () => {
     expect(commitmentDates(commitment({ nextDebit: "2026-12-05" }), "2026-11-01", "2026-11-30")).toEqual([
       "2026-11-05",

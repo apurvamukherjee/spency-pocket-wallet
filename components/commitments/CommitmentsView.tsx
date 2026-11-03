@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { addDays, diffDays } from "@/lib/engine/dates";
+import { addDays, dueWhen } from "@/lib/engine/dates";
 import { useActions, useData, useFormat, useSummary } from "@/lib/data/context";
 import { monthOf } from "@/lib/engine/dates";
 import { billStatus, type BillStatus } from "@/lib/engine/derive";
@@ -75,8 +75,7 @@ export function CommitmentsView() {
         )}
         <ul className="divide-y divide-line">
           {rows.map(({ c, next, status }) => {
-            const inDays = diffDays(s.today, next);
-            const when = inDays === 0 ? "today" : inDays === 1 ? "tomorrow" : `in ${inDays} days`;
+            const when = dueWhen(s.today, next);
             const paid = status.state === "paid" || status.state === "assumed_paid";
             return (
               <li key={c.id} className="flex items-center gap-3">
