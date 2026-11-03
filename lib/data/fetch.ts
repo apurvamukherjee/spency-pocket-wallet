@@ -40,8 +40,9 @@ export async function fetchAppData(sb: Supabase, user: User): Promise<AppData> {
     sb.from("merchant_memory").select("*").then(must),
     sb.from("reconcile_checks").select("*").order("date", { ascending: false }).limit(60).then(must),
   ]);
-  // A week before the plan starts covers the partial first week; pending items always come along.
-  const since = new Date((plan ? Date.parse(plan.balance_at) : Date.now() - 31 * DAY_MS) - 8 * DAY_MS).toISOString();
+  // From a week before the plan (its partial first week) or four weeks back (pattern detection), whichever is
+  // earlier; pending items always come along.
+  const since = new Date(Math.min(plan ? Date.parse(plan.balance_at) - 8 * DAY_MS : Infinity, Date.now() - 29 * DAY_MS)).toISOString();
   const txns = must(
     await sb.from("transactions").select("*").or(`status.eq.pending,occurred_at.gte."${since}"`).order("occurred_at"),
   );

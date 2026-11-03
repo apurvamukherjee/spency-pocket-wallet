@@ -86,6 +86,7 @@ const demoActions: Actions = {
     startMonth: async (plan, envelopes, commitments) =>
       apply((d) => r.startMonth({ ...d, txns: [], checks: [], memory: {} }, plan, "demo-plan", envelopes, commitments)),
     updateProfile: (patch) => apply((d) => r.updateProfile(d, patch)),
+    resetAll: async () => apply(r.resetAll),
 };
 
 export function DemoProvider({ children, fallback }: { children: ReactNode; fallback: ReactNode }) {
@@ -96,7 +97,8 @@ export function DemoProvider({ children, fallback }: { children: ReactNode; fall
   // The demo is always "this month": regenerate when empty or left over from a previous month.
   useEffect(() => {
     const d = useDemoStore.getState().data;
-    if (ready && (!d || d.plan?.month !== monthOf(todayIn(d.profile.timeZone)))) useDemoStore.getState().reset();
+    // A reset leaves plan null on purpose (onboarding), so only a stale month regenerates.
+    if (ready && (!d || (d.plan && d.plan.month !== monthOf(todayIn(d.profile.timeZone))))) useDemoStore.getState().reset();
   }, [ready]);
 
   useEffect(() => {

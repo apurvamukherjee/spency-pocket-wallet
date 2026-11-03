@@ -50,4 +50,6 @@ export type Actions = {
   /** Creates (or replaces) this month's plan and the full envelope and bill lists. */
   startMonth: (plan: PlanInput, envelopes: Envelope[], commitments: Commitment[]) => Promise<void>;
   updateProfile: (patch: ProfilePatch) => void;
+  /** Deletes every transaction, envelope, bill, plan, memory and check. Keeps the account and profile. */
+  resetAll: () => Promise<void>;
 };

@@ -81,4 +81,14 @@ export function startMonth(d: AppData, plan: PlanInput, planId: string, envelope
   return { ...next, plan: { ...plan, id: planId }, envelopes, commitments };
 }
 
+export const resetAll = (d: AppData): AppData => ({
+  ...d,
+  plan: null,
+  envelopes: [],
+  commitments: [],
+  txns: [],
+  memory: {},
+  checks: [],
+});
+
 export const updateProfile = (d: AppData, patch: ProfilePatch): AppData => ({ ...d, profile: { ...d.profile, ...patch } });

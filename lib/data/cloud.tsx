@@ -78,6 +78,15 @@ function cloudActions(sb: Supabase, qc: QueryClient, key: readonly unknown[], us
     updateProfile: (patch) =>
       run((d) => r.updateProfile(d, patch), () => sb.from("profiles").update(rows.profileToRow(patch)).eq("id", user.id)),
 
+    // Not optimistic: wait for every delete, then reload into onboarding. Row level security scopes each to this user;
+    // transactions go first since they reference envelopes and bills.
+    async resetAll() {
+      for (const table of ["transactions", "merchant_memory", "reconcile_checks", "month_plans", "envelopes", "commitments"] as const) {
+        ok(await sb.from(table).delete().eq("user_id", user.id));
+      }
+      await qc.invalidateQueries({ queryKey: key });
+    },
+
     // Not optimistic: onboarding waits for the server so the plan id is real before the app opens.
     async startMonth(plan, envelopes, commitments) {
       ok(await sb.from("month_plans").upsert(rows.planToInsert(plan), { onConflict: "user_id,month" }));

@@ -48,13 +48,16 @@ export function seedData(today: ISODate): { data: SpencyData; memory: MerchantMe
       ...t,
     });
 
-  const blinkit = [186, 142, 231, 98, 164];
+  // Four weeks of history before the month (for pattern detection; it's before the plan so balances ignore it),
+  // then the month so far. Steady habits: small stuff runs a little over, Blinkit stays under.
+  const blinkit = [168, 142, 186, 154];
   const food = [420, 260, 380, 515];
-  for (let d = first, i = 0; d < today; d = addDays(d, 1), i++) {
-    if (i % 2 === 0) add(d, "19:42", blinkit[i % blinkit.length], { merchant: "Blinkit", envelopeId: "blinkit" });
-    if (i % 3 === 1) add(d, "21:05", food[i % food.length], { merchant: "Swiggy", envelopeId: "eating-out" });
-    if (i % 6 === 2) add(d, "08:30", 450, { merchant: "Indian Oil", envelopeId: "fuel" });
-    if (i % 2 === 1) add(d, "13:15", 60 + (i % 4) * 25, { merchant: "Chai Point", envelopeId: "small-stuff" });
+  for (let d = addDays(first, -28), j = 0; d < today; d = addDays(d, 1), j++) {
+    const i = j - 28;
+    if (j % 4 === 0) add(d, "19:42", blinkit[(j / 4) % blinkit.length], { merchant: "Blinkit", envelopeId: "blinkit" });
+    if (j % 3 === 1) add(d, "21:05", food[j % food.length], { merchant: "Swiggy", envelopeId: "eating-out" });
+    if (j % 6 === 2) add(d, "08:30", 450, { merchant: "Indian Oil", envelopeId: "fuel" });
+    add(d, "13:15", 45 + (j % 3) * 10, { merchant: "Chai Point", envelopeId: "small-stuff" });
     if (i === 3) add(d, "11:00", 2000, { merchant: "ATM withdrawal", kind: "transfer", source: "manual", upiRef: null });
     if (i === 4) add(d, "17:20", 150, { merchant: "Auto", wallet: "cash", envelopeId: "small-stuff", source: "manual", upiRef: null });
     if (i === 9) add(d, "20:10", 1899, { merchant: "Uniqlo", note: "Winter jacket" });
@@ -74,7 +77,7 @@ export function seedData(today: ISODate): { data: SpencyData; memory: MerchantMe
   pending("12:48", 348, "Swiggy", "eating-out", "631298114502");
   pending("13:02", 120, "Third Wave Coffee", "small-stuff", "631298114733");
   pending("13:40", 1299, "Decathlon", null, "631298115021");
-  const dup = txns.find((t) => t.merchant === "Blinkit" && t.status === "confirmed");
+  const dup = txns.findLast((t) => t.merchant === "Blinkit" && t.status === "confirmed");
   if (dup) add(today, "14:05", dup.amount / 100, { merchant: "Blinkit", envelopeId: "blinkit", status: "pending", upiRef: dup.upiRef });
 
   let memory: MerchantMemory = {};

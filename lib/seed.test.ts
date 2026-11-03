@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { summarize } from "./engine/derive";
 import { findDuplicate } from "./engine/inbox";
+import { suggestRebalance } from "./engine/patterns";
 import { seedData } from "./seed";
 
 describe("seedData", () => {
@@ -18,4 +19,13 @@ describe("seedData", () => {
     const dup = data.txns.find((t) => t.status === "pending" && t.merchant === "Blinkit");
     expect(dup && findDuplicate(dup, data.txns.filter((t) => t.id !== dup.id))).toBeTruthy();
   });
+});
+
+it("shows a rebalance suggestion in the demo", () => {
+  for (const today of ["2026-11-03", "2026-11-18"]) {
+    const { data } = seedData(today);
+    const r = suggestRebalance({ ...data, today, weekStart: 1, timeZone: "Asia/Kolkata", unit: 100 });
+    expect(r?.to.name).toBe("Small stuff");
+    expect(r?.from.name).toBe("Blinkit");
+  }
 });
