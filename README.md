@@ -1,83 +1,118 @@
 # Spency
 
-A calm spending tracker that helps you end every month with the bank balance you planned, and that Claude keeps up to date for you.
+A calm spending tracker that keeps you on course for the month-end balance you planned, kept up to date by Claude.
 
-You tell Spency your balance today and the balance you want at month-end. It reserves your fixed bills, splits the rest into weekly envelopes (Blinkit, Fuel, Small stuff…) and a flex pool, and tells you one number every morning: **how much is safe to spend today**.
+[![CI](https://github.com/apurvamukherjee/spency-pocket-wallet/actions/workflows/ci.yml/badge.svg)](https://github.com/apurvamukherjee/spency-pocket-wallet/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> Status: **Phase 1 complete, awaiting review.** Every screen and the full budget engine run on a demo month stored in your browser. No accounts or database yet.
+```bash
+git clone https://github.com/apurvamukherjee/spency-pocket-wallet.git && cd spency-pocket-wallet && npm install && npm run dev
+```
 
 <p>
-  <img src="docs/screenshots/home-mobile.png" width="220" alt="Home: safe to spend today, projected month-end and envelope bars">
-  <img src="docs/screenshots/inbox-mobile.png" width="220" alt="Inbox: payments from Claude waiting to be confirmed, with a duplicate flagged">
-  <img src="docs/screenshots/envelopes-mobile.png" width="220" alt="Envelopes: weekly limits, lock and leftover rules">
+  <img src="docs/screenshots/home-mobile.png" width="240" alt="Home in dark mode: safe to spend today, status, and a summary of this week">
+  <img src="docs/screenshots/home-mobile-light.png" width="240" alt="Home in light mode with the month-end projection chart">
+  <img src="docs/screenshots/settings-mobile.png" width="240" alt="Settings: profile, theme toggle, currency, language and time zone">
 </p>
 
-<img src="docs/screenshots/desktop.png" alt="Desktop: navigation, Home, and the persistent Inbox panel">
+<img src="docs/screenshots/desktop.png" alt="Desktop: navigation, Home, and the persistent Inbox of payments from Claude">
 
-## What works today
+> **Status:** Phase 2 (accounts and sync) is built and in review. The Claude connector (Phase 3) is next. See the [roadmap](#roadmap).
 
-- **Safe to spend today**: envelope money left this week plus a fair share of flex, spread over the days left.
-- **Weekly settlement, live**: overspend is covered by savings from unlocked envelopes, then flex, then the month-end target. Home shows "Covered by Blinkit savings" the moment an envelope goes over, with a plain-language summary.
-- **Projected month-end** vs target with a small chart, plus flex left, bills still due and bonus saved.
-- **Inbox**: swipe right to confirm, left to dismiss, tap to fix amount or category. Duplicates (same UPI ref, or same merchant and amount within 2 minutes) are flagged and kept out of Confirm all.
-- **Merchant memory**: recategorize Swiggy once and future Swiggy payments land in the right envelope.
-- **Envelopes**: weekly limits, locked envelopes, leftover rules (roll over, to flex, save it), and week-by-week history.
-- **Bills**: recurring commitments reserved before anything else.
-- **Cash**: withdrawals are transfers, not spending; cash spends still count toward envelopes.
-- **Reconcile**: compare with your real bank balance, then find the gap with Claude, log an adjustment or ignore it. Daily streak.
-- **Onboarding** in three short steps, and Settings to re-baseline the plan.
+## What it does
 
-## How the numbers work
+You tell Spency your balance today and the balance you want at month-end. It sets aside your bills, splits the rest into weekly envelopes (groceries, eating out, transport…) plus a flex pool, and gives you one number each morning: **how much is safe to spend today**.
 
-Everything is derived from the month plan plus confirmed transactions, in integer paise. The engine is plain TypeScript in [`lib/engine`](lib/engine) with no framework imports, covered by Vitest.
-
-- `spendable = bank + cash − target (+ salary due this month)`
-- `flex = spendable − bills this month − envelope allocation`
-- Envelope allocation is prorated by day: `weekly limit / 7 × days of each week inside the month`. Partial weeks at the start and end of the plan settle on that prorated limit.
-- `projected month-end = money now + salary still due − bills still due − envelope money left − unused flex`. If you spend exactly to plan, this equals your target to the rupee.
+- **Overspending is handled for you.** Go over on one envelope and Spency covers it from what you saved in others, then from flex, and only then from your month-end target. It tells you plainly: "You went $15 over on Coffee, and all of it was covered because you spent less on Groceries."
+- **Projected month-end** against your target, updated with every payment.
+- **Inbox** of payments Claude read from your screenshots. Swipe right to confirm, left to dismiss. Duplicates are flagged.
+- **Merchant memory.** Recategorize a shop once; future payments there land in the right envelope.
+- **Cash** withdrawals are transfers, not spending. Cash purchases still count toward envelopes.
+- **Daily reconcile** against your real bank balance, with a streak.
+- **Works everywhere.** Any currency, number format and time zone. Dark mode by default, light mode in Settings.
+- **Private by design.** Spency never asks for bank logins. It only knows what you or Claude tell it.
 
 ## Spency as Claude's wallet
 
-The point of Spency is that you don't type in transactions. Claude does.
+The point is that you don't type transactions in. Claude does.
 
 ```
- You ──(UPI screenshot)──▶ Claude chat
-                             │  reads merchant, amount, time, UPI ref
-                             ▼
-                   Spency MCP connector  ──▶  Inbox (pending)
-                                                  │ swipe → confirm
-                                                  ▼
+ You ──(payment screenshot)──▶ Claude
+                                 │  reads merchant, amount, time, reference
+                                 ▼
+                      Spency connector (MCP) ──▶ Inbox (pending)
+                                                    │ swipe to confirm
+                                                    ▼
                                     envelopes · flex · month-end projection
 ```
 
-1. You add Spency to Claude as a **custom connector** (a remote MCP server hosted on the same Vercel deployment). You sign in once with OAuth, so your Claude is tied to your Spency account.
-2. You drop UPI payment screenshots into any Claude chat. Claude extracts the merchant, amount, time and UPI reference, maps them to your envelope names, and calls `add_transactions`.
-3. Everything Claude sends lands in your Spency **Inbox** as *pending*. Nothing touches your balances until you swipe to confirm.
-4. You can also just ask Claude: *"Can I afford a ₹1,500 dinner tonight?"* It calls `get_summary` and answers from your real numbers.
+1. Add Spency to Claude as a **custom connector**: a remote MCP server on the same deployment. You sign in once, so your Claude is tied to your Spency account.
+2. Drop payment screenshots into any Claude chat. Claude extracts the merchant, amount, time and reference, maps them to your envelope names, and sends them over.
+3. Everything Claude sends lands in your Inbox as **pending**. Nothing touches your balances until you confirm it.
+4. Ask Claude things like *"Can I afford a $60 dinner tonight?"* and it answers from your real numbers.
 
-Spency never sees bank credentials. It only knows what you or Claude tell it.
+Planned tools: `get_summary`, `add_transactions` (deduplicated by payment reference), `list_transactions`, `update_envelope`, `add_commitment`, `log_cash`, `reconcile`. Shipping in Phase 3.
 
-Planned MCP tools: `get_summary`, `add_transactions` (deduped by UPI ref), `list_transactions`, `update_envelope`, `add_commitment`, `log_cash`, `reconcile`.
+## Run it
+
+**Demo mode (no setup):** `npm install && npm run dev`, then open http://localhost:3000. You get a sample month stored in your browser.
+
+**With accounts:** Spency uses [Supabase](https://supabase.com) for Postgres and auth.
+
+1. Create a free Supabase project.
+2. `cp .env.example .env.local` and fill in `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Project Settings → API).
+3. Apply the schema:
+   ```bash
+   npx supabase login
+   npx supabase link --project-ref <your-project-ref>
+   npx supabase db push --remote
+   ```
+4. In Supabase → Authentication → URL Configuration, set the Site URL and add `<your-site>/auth/confirm` to the redirect URLs.
+5. `npm run dev`, then create an account.
+
+```bash
+npm test           # engine tests
+npm run typecheck
+npm run lint
+npm run build
+```
+
+## How the numbers work
+
+Everything shown is derived from the month plan plus confirmed transactions, in integer minor units (cents, paise, yen). The engine is plain TypeScript in [`lib/engine`](lib/engine) with no framework imports, covered by Vitest.
+
+- `spendable = bank + cash − target (+ pay still due this month)`
+- `flex = spendable − bills this month − envelope allocation`
+- Envelope allocation is prorated by day: `weekly limit / 7 × days of each week inside the month`, rounded to a whole unit of your currency.
+- `projected month-end = money now + pay still due − bills still due − envelope money left − unused flex`. If you spend exactly to plan, this equals your target.
+
+## Architecture
+
+One Next.js 16 app serves the UI, the server actions and (from Phase 3) the MCP server.
+
+| Layer | Where | Notes |
+|---|---|---|
+| Budget engine | `lib/engine/` | Pure functions: settlement, projection, proration, money formatting. |
+| Data | `lib/data/` | Pure reducers shared by the local demo (Zustand) and the cloud (TanStack Query + Supabase, optimistic). |
+| Database | `supabase/migrations/` | Postgres with row level security on every table; composite keys stop cross-user references. |
+| Auth | `app/(auth)/`, `proxy.ts` | Email and password through Supabase; the proxy refreshes the session cookie. |
+| UI | `app/(app)/`, `components/` | Tailwind CSS 4, hand-drawn icons and charts, native `<dialog>` sheets. |
 
 ## Roadmap
 
 | Phase | What | State |
 |---|---|---|
-| 1 | All screens + weekly settlement engine on seed data, Vitest coverage | done, in review |
-| 2 | Supabase schema, RLS, auth, real data | — |
-| 3 | MCP server with OAuth, connector setup guide | — |
-| 4 | Pattern detection, rebalance suggestions, polish, accessibility | — |
+| 1 | Screens and weekly settlement engine on local data | done |
+| 2 | Supabase schema, row level security, accounts, sync, any currency, light theme | done, in review |
+| 3 | MCP server with OAuth, Claude connector setup guide | next |
+| 4 | Pattern detection, rebalance suggestions, polish, accessibility | planned |
 
-Full product spec: [SPEC.md](SPEC.md).
+The full product spec is in [SPEC.md](SPEC.md) and the changes are in [CHANGELOG.md](CHANGELOG.md).
 
-## Run it
+## Contributing
 
-```bash
-npm install
-npm run dev        # http://localhost:3000 (opens on a demo month)
-npm test           # engine tests
-npm run typecheck
-npm run lint
-```
+Issues and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md). Questions go to [Discussions](https://github.com/apurvamukherjee/spency-pocket-wallet/discussions).
 
-Stack: Next.js 16 (App Router), React 19, Tailwind CSS 4, Zustand, Vitest. One repo: the same Next.js app serves the UI, the API and (from Phase 3) the MCP server. Dark mode only. Money is stored as integer paise and shown in Indian digit grouping (₹1,00,000), dates in Asia/Kolkata.
+## License
+
+[MIT](LICENSE) © Apurva Mukherjee
