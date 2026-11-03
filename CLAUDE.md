@@ -24,6 +24,6 @@ Read `SPEC.md` before any work. It is the source of truth. Phases are gated: fin
 - `npm test`
 
 ## Git & README
-- Commit and push to `origin` (github.com/apurvamukherjee/spency-pocket-wallet) at each meaningful milestone, using the local git identity only. No `Co-Authored-By` or any other attribution trailers.
+- Commit granularly (one focused change per commit, descriptive subject + body saying what and why) and push to `origin` (github.com/apurvamukherjee/spency-pocket-wallet) after each step, using the local git identity only. No `Co-Authored-By` or any other attribution trailers.
 - Keep `README.md` current with every change: what works, how to run it, screenshots (in `docs/screenshots/`) refreshed at each phase milestone, and the Claude connector story (Spency as Claude's personal-wallet plugin via MCP).
 @AGENTS.md
