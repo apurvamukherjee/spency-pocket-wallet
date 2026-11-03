@@ -27,7 +27,7 @@ export function EnvelopeBars({ settlement, money }: { settlement: Settlement; mo
                 )}
               </span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-raised">
+            <div aria-hidden className="h-1.5 overflow-hidden rounded-full bg-raised">
               <div
                 className={`h-full rounded-full ${tone} origin-left transition-[width] duration-700 ease-out-soft`}
                 style={{ width: `${pct}%` }}

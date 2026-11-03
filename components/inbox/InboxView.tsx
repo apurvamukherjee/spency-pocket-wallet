@@ -22,7 +22,9 @@ export function InboxView() {
     <div>
       <header className="mb-8">
         <h1 className="text-2xl font-medium tracking-tight">Inbox</h1>
-        <p className="mt-1 text-sm text-muted">Payments Claude read from your screenshots. Swipe right to confirm, left to dismiss.</p>
+        <p className="mt-1 text-sm text-muted">
+          Payments Claude read from your screenshots. Swipe right to confirm, left to dismiss, or tap one to review it.
+        </p>
       </header>
       <InboxList />
     </div>

@@ -60,7 +60,10 @@ export function Sidebar() {
           <Icon name={n.icon} />
           {n.label}
           {n.href === "/inbox" && pending > 0 && (
-            <span className="ml-auto rounded-full bg-accent/15 px-2 text-xs leading-5 text-accent tabular-nums">{pending}</span>
+            <span className="ml-auto rounded-full bg-accent/15 px-2 text-xs leading-5 text-accent tabular-nums">
+              {pending}
+              <span className="sr-only"> to review</span>
+            </span>
           )}
         </Link>
       ))}
@@ -130,6 +133,7 @@ function Tab({ href, label, icon, active, badge }: { href: string; label: string
       {badge > 0 && (
         <span className="absolute top-1.5 left-1/2 ml-2 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] leading-4 font-medium text-bg tabular-nums">
           {badge}
+          <span className="sr-only"> to review</span>
         </span>
       )}
     </Link>

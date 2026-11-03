@@ -30,7 +30,7 @@
   --line: #22262c;
   --fg: #eceef2;
   --muted: #8a919b;
-  --faint: #565c66;
+  --faint: #747b86;
   --accent: oklch(0.8 0.1 255);
   --ok: oklch(0.8 0.12 160);
   --warn: oklch(0.83 0.12 80);
@@ -46,7 +46,7 @@
   --line: #e4e4de;
   --fg: #111214;
   --muted: #5f646c;
-  --faint: #9a9fa6;
+  --faint: #6c7179;
   --accent: oklch(0.52 0.15 260);
   --ok: oklch(0.56 0.13 160);
   --warn: oklch(0.62 0.14 65);
