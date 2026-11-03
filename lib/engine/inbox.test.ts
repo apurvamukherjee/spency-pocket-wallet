@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findDuplicate, recallEnvelope, rememberMerchant } from "./inbox";
+import { defaultEnvelopeId, findDuplicate, recallEnvelope, rememberMerchant } from "./inbox";
 import type { Txn } from "./types";
 
 const existing: Txn = {
@@ -49,5 +49,18 @@ describe("merchant memory", () => {
     const m = rememberMerchant({}, "  Blinkit  Commerce", "blinkit");
     expect(recallEnvelope(m, "blinkit commerce")).toBe("blinkit");
     expect(recallEnvelope(m, "Zepto")).toBeUndefined();
+  });
+});
+
+describe("defaultEnvelopeId", () => {
+  const envs = [
+    { id: "g", name: "Groceries", weeklyLimit: 1, locked: false, leftover: "rollover" as const },
+    { id: "s", name: "Small Stuff", weeklyLimit: 1, locked: false, leftover: "rollover" as const },
+  ];
+  it("prefers the user's choice, then Small stuff, then Flex", () => {
+    expect(defaultEnvelopeId(envs, "g")).toBe("g");
+    expect(defaultEnvelopeId(envs, null)).toBe("s");
+    expect(defaultEnvelopeId(envs, "deleted")).toBe("s");
+    expect(defaultEnvelopeId([envs[0]], undefined)).toBeNull();
   });
 });
