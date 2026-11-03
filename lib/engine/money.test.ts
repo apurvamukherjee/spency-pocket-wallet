@@ -1,41 +1,86 @@
 import { describe, expect, it } from "vitest";
-import { allocate, allocateRupees, floorToRupee, formatINR, MoneyError, parseRupees, rupees } from "./money";
+import {
+  allocate,
+  allocateWhole,
+  floorToUnit,
+  formatMoney,
+  major,
+  MoneyError,
+  parseMoney,
+  toInputText,
+  unitOf,
+} from "./money";
 
-describe("formatINR", () => {
-  it("uses Indian digit grouping", () => {
-    expect(formatINR(rupees(100000))).toBe("₹1,00,000");
-    expect(formatINR(rupees(12345678))).toBe("₹1,23,45,678");
+const INR = { currency: "INR", locale: "en-IN" };
+const USD = { currency: "USD", locale: "en-US" };
+const EUR_DE = { currency: "EUR", locale: "de-DE" };
+const JPY = { currency: "JPY", locale: "ja-JP" };
+
+describe("unitOf", () => {
+  it("follows each currency's minor unit", () => {
+    expect(unitOf("INR")).toBe(100);
+    expect(unitOf("JPY")).toBe(1);
+    expect(unitOf("KWD")).toBe(1000);
   });
-  it("shows paise only when present", () => {
-    expect(formatINR(150)).toBe("₹1.50");
-    expect(formatINR(5)).toBe("₹0.05");
+});
+
+describe("formatMoney", () => {
+  it("uses the locale's grouping", () => {
+    expect(formatMoney(major(100000), INR)).toBe("₹1,00,000");
+    expect(formatMoney(major(100000), USD)).toBe("$100,000");
+    expect(formatMoney(major(1500), EUR_DE)).toBe("1.500\u00a0€");
+    expect(formatMoney(1500, JPY)).toBe("￥1,500");
+  });
+  it("shows fractions only when present", () => {
+    expect(formatMoney(150, INR)).toBe("₹1.50");
+    expect(formatMoney(5, USD)).toBe("$0.05");
+    expect(formatMoney(150050, EUR_DE)).toBe("1.500,50\u00a0€");
+  });
+  it("is exact for large values", () => {
+    expect(formatMoney(900_719_925_474_099, USD)).toBe("$9,007,199,254,740.99");
   });
   it("signs", () => {
-    expect(formatINR(-34000)).toBe("−₹340");
-    expect(formatINR(34000, { signed: true })).toBe("+₹340");
+    expect(formatMoney(-34000, INR)).toBe("-₹340");
+    expect(formatMoney(34000, INR, { signed: true })).toBe("+₹340");
   });
-  it("rejects fractional paise", () => {
-    expect(() => formatINR(1.5)).toThrow(MoneyError);
+  it("rejects fractional minor units", () => {
+    expect(() => formatMoney(1.5, INR)).toThrow(MoneyError);
   });
 });
 
-describe("parseRupees", () => {
-  it("parses", () => {
-    expect(parseRupees("1,500")).toBe(150000);
-    expect(parseRupees("₹99.5")).toBe(9950);
-    expect(parseRupees("0.05")).toBe(5);
+describe("parseMoney", () => {
+  it("parses in the locale's notation", () => {
+    expect(parseMoney("1,500", INR)).toBe(150000);
+    expect(parseMoney("₹99.5", INR)).toBe(9950);
+    expect(parseMoney("1.500,50", EUR_DE)).toBe(150050);
+    expect(parseMoney("1500", JPY)).toBe(1500);
   });
   it("rejects junk", () => {
-    expect(parseRupees("")).toBeNull();
-    expect(parseRupees("12.345")).toBeNull();
-    expect(parseRupees("-5")).toBeNull();
+    expect(parseMoney("", INR)).toBeNull();
+    expect(parseMoney("12.345", USD)).toBeNull();
+    expect(parseMoney("-5", USD)).toBeNull();
+    expect(parseMoney("1.5", JPY)).toBeNull();
   });
 });
 
-describe("floorToRupee", () => {
+describe("toInputText", () => {
+  it("round-trips through parseMoney", () => {
+    for (const [v, f] of [
+      [9950, INR],
+      [150050, EUR_DE],
+      [1500, JPY],
+    ] as const) {
+      expect(parseMoney(toInputText(v, f), f)).toBe(v);
+    }
+    expect(toInputText(150050, EUR_DE)).toBe("1500,5");
+  });
+});
+
+describe("floorToUnit", () => {
   it("floors toward −∞", () => {
-    expect(floorToRupee(12345)).toBe(12300);
-    expect(floorToRupee(-50)).toBe(-100);
+    expect(floorToUnit(12345, 100)).toBe(12300);
+    expect(floorToUnit(-50, 100)).toBe(-100);
+    expect(floorToUnit(12345, 1)).toBe(12345);
   });
 });
 
@@ -54,9 +99,13 @@ describe("allocate", () => {
   });
 });
 
-describe("allocateRupees", () => {
-  it("splits in whole rupees and still sums exactly", () => {
-    expect(allocateRupees(rupees(115), [rupees(114), rupees(43)])).toEqual([rupees(84), rupees(31)]);
-    expect(allocateRupees(11550, [1, 3])).toEqual([2900, 8650]);
+describe("allocateWhole", () => {
+  it("splits in whole units and still sums exactly", () => {
+    expect(allocateWhole(major(115), [major(114), major(43)], 100)).toEqual([major(84), major(31)]);
+    expect(allocateWhole(11550, [1, 3], 100)).toEqual([2900, 8650]);
+    expect(allocateWhole(115, [114, 43], 1)).toEqual([84, 31]);
+  });
+  it("gives nothing when no one has weight", () => {
+    expect(allocateWhole(150, [0, 0], 100)).toEqual([0, 0]);
   });
 });

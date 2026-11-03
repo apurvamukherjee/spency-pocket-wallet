@@ -1,58 +1,97 @@
-import type { Paise } from "./types";
+import type { Minor } from "./types";
 
 export class MoneyError extends Error {
   override name = "MoneyError";
 }
 
-export function assertPaise(value: number): asserts value is Paise {
-  if (!Number.isSafeInteger(value)) throw new MoneyError(`Not integer paise: ${value}`);
+export function assertMinor(value: number): asserts value is Minor {
+  if (!Number.isSafeInteger(value)) throw new MoneyError(`Not integer minor units: ${value}`);
 }
 
-export function rupees(whole: number): Paise {
-  assertPaise(whole);
-  return whole * 100;
+/** Minor units per major unit: 100 for USD/INR/EUR, 1 for JPY, 1000 for KWD. */
+export function unitOf(currency: string): number {
+  const digits = new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2;
+  return 10 ** digits;
 }
 
-const grouping = new Intl.NumberFormat("en-IN");
-
-/** ₹1,00,000 grouping; paise only shown when non-zero. Formats without ever dividing into a float. */
-export function formatINR(paise: Paise, opts: { signed?: boolean } = {}): string {
-  assertPaise(paise);
-  const abs = Math.abs(paise);
-  const rem = abs % 100;
-  const whole = grouping.format((abs - rem) / 100);
-  const body = rem === 0 ? whole : `${whole}.${String(rem).padStart(2, "0")}`;
-  const sign = paise < 0 ? "−" : opts.signed && paise > 0 ? "+" : "";
-  return `${sign}₹${body}`;
+/** Whole major units → minor units, e.g. major(500) = 50000 for a 2-decimal currency. */
+export function major(whole: number, unit = 100): Minor {
+  assertMinor(whole);
+  return whole * unit;
 }
 
-/** Parses user input like "1,500" or "₹99.5" into paise; null when not a valid amount. */
-export function parseRupees(input: string): Paise | null {
-  const clean = input.replace(/[₹,\s]/g, "");
-  const m = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(clean);
-  if (!m) return null;
-  return Number(m[1]) * 100 + Number((m[2] ?? "").padEnd(2, "0"));
+export type MoneyFormat = { currency: string; locale: string };
+export type FormatMoney = (minor: Minor, opts?: { signed?: boolean }) => string;
+
+const formatters = new Map<string, Intl.NumberFormat>();
+function formatter(f: MoneyFormat, digits: number, fraction: boolean, signed: boolean) {
+  const key = `${f.locale}|${f.currency}|${fraction}|${signed}`;
+  let nf = formatters.get(key);
+  if (!nf) {
+    nf = new Intl.NumberFormat(f.locale, {
+      style: "currency",
+      currency: f.currency,
+      minimumFractionDigits: fraction ? digits : 0,
+      maximumFractionDigits: digits,
+      signDisplay: signed ? "exceptZero" : "auto",
+    });
+    formatters.set(key, nf);
+  }
+  return nf;
 }
 
-export function floorToRupee(paise: Paise): Paise {
-  return paise - (((paise % 100) + 100) % 100);
+/**
+ * Locale-aware currency formatting (₹1,00,000 · $100,000 · 100.000 €). Builds a decimal string so the
+ * value never passes through a float; fractions only show when non-zero.
+ */
+export function formatMoney(minor: Minor, f: MoneyFormat, opts: { signed?: boolean } = {}): string {
+  assertMinor(minor);
+  const unit = unitOf(f.currency);
+  const digits = Math.log10(unit);
+  const abs = Math.abs(minor);
+  const rem = abs % unit;
+  const whole = (abs - rem) / unit;
+  const decimal = `${minor < 0 ? "-" : ""}${whole}${digits ? `.${String(rem).padStart(digits, "0")}` : ""}`;
+  return formatter(f, digits, rem !== 0, !!opts.signed).format(decimal as Intl.StringNumericLiteral);
 }
 
-/** Like allocate, but in whole rupees; leftover paise go to the largest weight. Keeps derived numbers clean. */
-export function allocateRupees(total: Paise, weights: Paise[]): Paise[] {
-  if (weights.every((w) => w <= 0)) return weights.map(() => 0);
-  const paise = total % 100;
-  const out = allocate((total - paise) / 100, weights).map((r) => r * 100);
-  if (paise > 0) out[weights.indexOf(Math.max(...weights))] += paise;
-  return out;
+export function moneyFormatter(f: MoneyFormat): FormatMoney {
+  return (minor, opts) => formatMoney(minor, f, opts);
+}
+
+/** User input in the locale's own notation ("1,500.50" in en-US, "1.500,50" in de-DE) → minor units; null if invalid. */
+export function parseMoney(input: string, f: MoneyFormat): Minor | null {
+  const unit = unitOf(f.currency);
+  const digits = Math.log10(unit);
+  const sep = new Intl.NumberFormat(f.locale).formatToParts(1.1).find((p) => p.type === "decimal")?.value ?? ".";
+  const clean = [...input].filter((c) => /\d/.test(c) || c === sep).join("");
+  const parts = clean.split(sep);
+  if (!parts[0] || parts.length > 2 || !/[\d]/.test(input)) return null;
+  const frac = parts[1] ?? "";
+  if (frac.length > digits || parts[0].length > 13) return null;
+  if (/-/.test(input)) return null;
+  return Number(parts[0]) * unit + Number(frac.padEnd(digits, "0") || "0");
+}
+
+/** Minor units → plain editable text in the locale's notation, without grouping ("1500.5" / "1500,5"). */
+export function toInputText(minor: Minor, f: MoneyFormat): string {
+  const unit = unitOf(f.currency);
+  const digits = Math.log10(unit);
+  return new Intl.NumberFormat(f.locale, { useGrouping: false, maximumFractionDigits: digits }).format(
+    `${(minor - (minor % unit)) / unit}.${String(minor % unit).padStart(digits, "0")}` as Intl.StringNumericLiteral,
+  );
+}
+
+export function floorToUnit(minor: Minor, unit: number): Minor {
+  return minor - (((minor % unit) + unit) % unit);
 }
 
 /**
  * Splits `total` across `weights` proportionally, summing exactly to `total`
  * (largest-remainder). BigInt because total × weight can exceed 2^53.
  */
-export function allocate(total: Paise, weights: Paise[]): Paise[] {
-  assertPaise(total);
+export function allocate(total: Minor, weights: Minor[]): Minor[] {
+  assertMinor(total);
   const sum = weights.reduce((a, b) => a + b, 0);
   if (sum <= 0 || total === 0) return weights.map(() => 0);
   const T = BigInt(total);
@@ -71,5 +110,14 @@ export function allocate(total: Paise, weights: Paise[]): Paise[] {
     out[i]++;
     left--;
   }
+  return out;
+}
+
+/** Like allocate, but in whole major units; the leftover fraction goes to the largest weight. Keeps derived numbers clean. */
+export function allocateWhole(total: Minor, weights: Minor[], unit: number): Minor[] {
+  if (weights.every((w) => w <= 0)) return weights.map(() => 0);
+  const frac = total % unit;
+  const out = allocate((total - frac) / unit, weights).map((r) => r * unit);
+  if (frac > 0) out[weights.indexOf(Math.max(...weights))] += frac;
   return out;
 }
