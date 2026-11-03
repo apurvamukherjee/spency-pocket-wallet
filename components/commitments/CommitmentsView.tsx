@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { addDays, diffDays } from "@/lib/engine/dates";
 import { useActions, useData, useFormat, useSummary } from "@/lib/data/context";
-import { commitmentDates } from "@/lib/engine/plan";
+import { monthEnd, monthOf, monthStart } from "@/lib/engine/dates";
+import { commitmentDates, monthlyEquivalent } from "@/lib/engine/plan";
 import type { Commitment, Frequency, ISODate } from "@/lib/engine/types";
 import { Icon } from "@/components/ui/Icon";
 import { Segmented } from "@/components/ui/controls";
@@ -18,9 +19,16 @@ export function CommitmentsView() {
   const s = useSummary();
   const fmt = useFormat();
   const [editing, setEditing] = useState<Commitment | "new" | null>(null);
+  const month = monthOf(s.today);
   const rows = commitments
-    .map((c) => ({ c, next: nextDate(c, s.today) }))
+    .map((c) => ({
+      c,
+      next: nextDate(c, s.today),
+      // Already went out earlier this month (before the plan's starting balance, or before today).
+      doneThisMonth: commitmentDates(c, monthStart(month), monthEnd(month)).some((d) => d < s.today),
+    }))
     .sort((a, b) => a.next.localeCompare(b.next));
+  const monthlyTotal = commitments.reduce((sum, c) => sum + monthlyEquivalent(c), 0);
 
   return (
     <div className="space-y-10">
@@ -31,11 +39,11 @@ export function CommitmentsView() {
 
       <section className="card grid grid-cols-2 gap-4 p-5">
         <div>
-          <p className="text-sm text-muted">This month</p>
-          <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums">{fmt.money(s.commitmentsTotal)}</p>
+          <p className="text-sm text-muted">Monthly total</p>
+          <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums">{fmt.money(monthlyTotal)}</p>
         </div>
         <div>
-          <p className="text-sm text-muted">Still to go</p>
+          <p className="text-sm text-muted">Still due this month</p>
           <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums">{fmt.money(s.commitmentsRemaining)}</p>
         </div>
       </section>
@@ -47,7 +55,7 @@ export function CommitmentsView() {
           </p>
         )}
         <ul className="divide-y divide-line">
-          {rows.map(({ c, next }) => {
+          {rows.map(({ c, next, doneThisMonth }) => {
             const inDays = diffDays(s.today, next);
             return (
               <li key={c.id}>
@@ -55,7 +63,15 @@ export function CommitmentsView() {
                   <div className="min-w-0">
                     <p className="truncate text-[15px]">{c.name}</p>
                     <p className="mt-0.5 text-[13px] text-muted">
-                      {fmt.shortDay(next)} · {inDays === 0 ? "today" : inDays === 1 ? "tomorrow" : `in ${inDays} days`} ·{" "}
+                      {doneThisMonth && monthOf(next) !== month ? (
+                        <>
+                          <span className="text-ok">Done this month</span> · next {fmt.shortDay(next)} ·{" "}
+                        </>
+                      ) : (
+                        <>
+                          {fmt.shortDay(next)} · {inDays === 0 ? "today" : inDays === 1 ? "tomorrow" : `in ${inDays} days`} ·{" "}
+                        </>
+                      )}
                       {FREQ_LABEL[c.frequency].toLowerCase()}
                     </p>
                   </div>

@@ -3,6 +3,7 @@ import { major as rupees } from "./money";
 import {
   commitmentDates,
   commitmentsInPlan,
+  monthlyEquivalent,
   envelopeAllocation,
   flexBudget,
   spendable,
@@ -101,6 +102,14 @@ describe("commitments", () => {
     expect(commitmentsInPlan(plan, [commitment({}), commitment({ amount: rupees(99), nextDebit: "2026-11-02" })])).toBe(
       rupees(748),
     );
+  });
+});
+
+describe("monthlyEquivalent", () => {
+  it("normalizes every frequency to a month", () => {
+    expect(monthlyEquivalent(commitment({ amount: rupees(750) }))).toBe(rupees(750));
+    expect(monthlyEquivalent(commitment({ frequency: "weekly", amount: rupees(300) }))).toBe(rupees(1300));
+    expect(monthlyEquivalent(commitment({ frequency: "yearly", amount: rupees(1200) }))).toBe(rupees(100));
   });
 });
 

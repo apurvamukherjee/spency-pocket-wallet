@@ -35,6 +35,13 @@ export function commitmentDates(c: Commitment, from: ISODate, to: ISODate): ISOD
   return out;
 }
 
+/** What a bill costs per month on average: weekly × 52 / 12, monthly as is, yearly / 12. */
+export function monthlyEquivalent(c: Commitment): Minor {
+  if (c.frequency === "weekly") return Math.round((c.amount * 52) / 12);
+  if (c.frequency === "yearly") return Math.round(c.amount / 12);
+  return c.amount;
+}
+
 export function commitmentsInPlan(plan: MonthPlan, cs: Commitment[]): Minor {
   const { start, end } = planWindow(plan);
   return cs.reduce((sum, c) => sum + c.amount * commitmentDates(c, start, end).length, 0);
