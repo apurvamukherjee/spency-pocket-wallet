@@ -30,7 +30,7 @@
   --line: #22262c;
   --fg: #eceef2;
   --muted: #8a919b;
-  --faint: #747b86;
+  --faint: #7e8590;
   --accent: oklch(0.8 0.1 255);
   --ok: oklch(0.8 0.12 160);
   --warn: oklch(0.83 0.12 80);
@@ -46,11 +46,11 @@
   --line: #e4e4de;
   --fg: #111214;
   --muted: #5f646c;
-  --faint: #6c7179;
+  --faint: #686d75;
   --accent: oklch(0.52 0.15 260);
-  --ok: oklch(0.56 0.13 160);
-  --warn: oklch(0.62 0.14 65);
-  --bad: oklch(0.57 0.17 25);
+  --ok: oklch(0.48 0.13 160);
+  --warn: oklch(0.5 0.13 65);
+  --bad: oklch(0.52 0.17 25);
   --shadow: 0 1px 2px rgb(17 18 20 / 0.04), 0 4px 16px -8px rgb(17 18 20 / 0.08);
 }
 
