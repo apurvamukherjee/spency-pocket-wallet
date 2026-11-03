@@ -10,6 +10,8 @@ import { Icon } from "@/components/ui/Icon";
 import { StatusChip } from "@/components/ui/controls";
 import { EnvelopeBars } from "./EnvelopeBars";
 import { ProjectionChart } from "./ProjectionChart";
+import { RebalanceCard } from "./RebalanceCard";
+import { RecentActivity } from "./RecentActivity";
 
 export function HomeView() {
   const data = useData();
@@ -79,6 +81,8 @@ export function HomeView() {
         </dl>
       </section>
 
+      <RebalanceCard />
+
       <section aria-labelledby="envelopes">
         <div className="mb-5 flex items-baseline justify-between">
           <h2 id="envelopes" className="text-[15px] font-medium">
@@ -96,6 +100,8 @@ export function HomeView() {
           </p>
         )}
       </section>
+
+      <RecentActivity />
     </div>
   );
 }
