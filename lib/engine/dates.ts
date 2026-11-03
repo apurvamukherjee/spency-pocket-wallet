@@ -36,6 +36,12 @@ export function diffDays(a: ISODate, b: ISODate): number {
   return toDays(b) - toDays(a);
 }
 
+/** "today", "tomorrow" or "in N days", counted from `today` to `d`. */
+export function dueWhen(today: ISODate, d: ISODate): string {
+  const n = diffDays(today, d);
+  return n === 0 ? "today" : n === 1 ? "tomorrow" : `in ${n} days`;
+}
+
 export function dayOfWeek(d: ISODate): number {
   return new Date(toDays(d) * DAY_MS).getUTCDay();
 }

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useData, useFormat, useSummary } from "@/lib/data/context";
 import { balanceSeries } from "@/lib/engine/derive";
-import { planWindow } from "@/lib/engine/plan";
+import { dueWhen } from "@/lib/engine/dates";
+import { nextBill, planWindow } from "@/lib/engine/plan";
 import { describeSettlement } from "@/lib/engine/settle";
 import { Icon } from "@/components/ui/Icon";
 import { StatusChip } from "@/components/ui/controls";
@@ -20,6 +21,8 @@ export function HomeView() {
   const win = planWindow(data.plan);
   const series = useMemo(() => balanceSeries(data.plan, data.txns, s.today), [data.plan, data.txns, s.today]);
   const delta = s.projected - s.target;
+  const next = nextBill(data.commitments, s.today);
+  const nextLine = next && `Next: ${next.commitment.name}, ${dueWhen(s.today, next.date)} (${fmt.shortDay(next.date)})`;
 
   return (
     <div className="space-y-10">
@@ -76,7 +79,7 @@ export function HomeView() {
         </div>
         <dl className="mt-5 grid grid-cols-3 gap-3 border-t border-line pt-4 text-sm">
           <Stat label="Flex left" value={fmt.money(Math.max(0, s.flexLeft))} />
-          <Stat label="Bills due" value={fmt.money(s.commitmentsRemaining)} />
+          <Stat label="Bills due" value={fmt.money(s.commitmentsRemaining)} note={nextLine} />
           <Stat label="Bonus saved" value={fmt.money(s.bonusSaved)} />
         </dl>
       </section>
@@ -106,11 +109,12 @@ export function HomeView() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, note }: { label: string; value: string; note?: string | null }) {
   return (
     <div>
       <dt className="text-muted">{label}</dt>
       <dd className="mt-0.5 tabular-nums">{value}</dd>
+      {note && <dd className="mt-1 text-xs text-muted">{note}</dd>}
     </div>
   );
 }
