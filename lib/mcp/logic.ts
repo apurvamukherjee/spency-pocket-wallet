@@ -1,9 +1,10 @@
+import { type Category, categoryLabel, FLEX } from "@/lib/data/category";
 import type { AppData } from "@/lib/data/types";
 import type { Summary } from "@/lib/engine/derive";
 import { findDuplicate, type MerchantMemory, recallEnvelope } from "@/lib/engine/inbox";
 import type { FormatMoney } from "@/lib/engine/money";
 import { coverLine, describeSettlement, type SettlementStatus } from "@/lib/engine/settle";
-import type { Envelope, Minor, Txn, Wallet } from "@/lib/engine/types";
+import type { Commitment, Envelope, Minor, Txn, Wallet } from "@/lib/engine/types";
 
 // Pure helpers behind the MCP tools: no I/O, so they're unit-tested like the engine.
 
@@ -26,21 +27,34 @@ export function toMinor(value: number | string, unit: number): Minor {
   return minor;
 }
 
-export type CategoryMatch = { envelopeId: string | null; via: "memory" | "suggestion" | "flex" };
+export type CategoryMatch = Category & { via: "memory" | "bill" | "suggestion" | "default" };
 
-/** Merchant memory wins (the user taught it); then Claude's suggestion by envelope name; otherwise flex. */
-export function resolveCategory(envelopes: Envelope[], memory: MerchantMemory, merchant: string, suggestion?: string): CategoryMatch {
+/**
+ * Merchant memory wins (the user taught it); then a bill whose name matches the merchant or suggestion; then
+ * Claude's suggested envelope; otherwise the user's default envelope. Claude suggesting "Flex" is ignored:
+ * only the user files things under Flex.
+ */
+export function resolveCategory(
+  envelopes: Envelope[],
+  memory: MerchantMemory,
+  merchant: string,
+  suggestion: string | undefined,
+  opts: { bills: Commitment[]; fallback: string | null },
+): CategoryMatch {
   const remembered = recallEnvelope(memory, merchant);
   if (remembered !== undefined && (remembered === null || envelopes.some((e) => e.id === remembered))) {
-    return { envelopeId: remembered, via: "memory" };
+    return { envelopeId: remembered, commitmentId: null, via: "memory" };
   }
   const s = suggestion?.trim().toLowerCase();
+  const m = merchant.trim().toLowerCase();
+  const bill = opts.bills.find((c) => [s, m].includes(c.name.toLowerCase()));
+  if (bill) return { envelopeId: null, commitmentId: bill.id, via: "bill" };
   if (s && s !== "flex") {
     const exact = envelopes.find((e) => e.name.toLowerCase() === s);
     const loose = exact ?? envelopes.find((e) => e.name.toLowerCase().includes(s) || s.includes(e.name.toLowerCase()));
-    if (loose) return { envelopeId: loose.id, via: "suggestion" };
+    if (loose) return { envelopeId: loose.id, commitmentId: null, via: "suggestion" };
   }
-  return { envelopeId: null, via: "flex" };
+  return { envelopeId: opts.fallback, commitmentId: null, via: "default" };
 }
 
 export function findEnvelope(envelopes: Envelope[], name: string): Envelope | undefined {
@@ -48,12 +62,15 @@ export function findEnvelope(envelopes: Envelope[], name: string): Envelope | un
   return envelopes.find((e) => e.name.toLowerCase() === n);
 }
 
-/** Exact envelope name (any case) or "Flex" → envelope id or null; anything else is a mistake worth telling Claude about. */
-export function envelopeIdByName(envelopes: Envelope[], name: string): string | null {
-  if (name.trim().toLowerCase() === "flex") return null;
+/** Exact envelope or bill name (any case), or "Flex" when the user asked for it; anything else is worth telling Claude about. */
+export function categoryByName(envelopes: Envelope[], bills: Commitment[], name: string): Category {
+  const n = name.trim().toLowerCase();
+  if (n === "flex") return FLEX;
   const e = findEnvelope(envelopes, name);
-  if (!e) throw new ToolInputError(`No envelope called "${name}". Use one of: ${[...envelopes.map((x) => x.name), "Flex"].join(", ")}.`);
-  return e.id;
+  if (e) return { envelopeId: e.id, commitmentId: null };
+  const b = bills.find((c) => c.name.toLowerCase() === n);
+  if (b) return { envelopeId: null, commitmentId: b.id };
+  throw new ToolInputError(`No envelope or bill called "${name}". Use one of: ${[...envelopes.map((x) => x.name), ...bills.map((c) => c.name), "Flex"].join(", ")}.`);
 }
 
 /** Payments dated before the plan's starting balance are already inside it, so they don't move any number. */
@@ -83,7 +100,7 @@ export type ImportPlan = {
  * (same reference, or same merchant + amount within 2 minutes) and of earlier items in the same batch.
  */
 export function planImport(
-  d: Pick<AppData, "envelopes" | "memory" | "txns">,
+  d: Pick<AppData, "envelopes" | "memory" | "txns" | "commitments"> & { defaultEnvelopeId: string | null },
   inputs: TxnInput[],
   unit: number,
   now: string,
@@ -107,7 +124,10 @@ export function planImport(
       continue;
     }
     const credit = input.direction === "credit";
-    const category = resolveCategory(d.envelopes, d.memory, merchant, input.suggested_category);
+    const category = resolveCategory(d.envelopes, d.memory, merchant, input.suggested_category, {
+      bills: d.commitments,
+      fallback: d.defaultEnvelopeId,
+    });
     const txn: Txn = {
       id: newId(),
       wallet: input.wallet ?? "bank",
@@ -116,7 +136,7 @@ export function planImport(
       kind: credit ? "income" : "expense",
       merchant,
       envelopeId: credit ? null : category.envelopeId,
-      commitmentId: null,
+      commitmentId: credit ? null : category.commitmentId,
       occurredAt: when.toISOString(),
       source: "claude",
       status: "pending",
@@ -136,12 +156,8 @@ const STATUS_LABEL: Record<SettlementStatus, string> = {
   target_hit: "Below target",
 };
 
-export function categoryName(envelopes: Envelope[], id: string | null): string {
-  return id === null ? "Flex" : (envelopes.find((e) => e.id === id)?.name ?? "Flex");
-}
-
 /** What Claude needs to answer "can I afford this?" and to map screenshots to envelope names. */
-export function summaryPayload(s: Summary, d: Pick<AppData, "envelopes" | "txns">, money: FormatMoney) {
+export function summaryPayload(s: Summary, d: Pick<AppData, "envelopes" | "txns" | "commitments">, money: FormatMoney) {
   const settlement = s.current.settlement;
   return {
     date: s.today,
@@ -168,16 +184,17 @@ export function summaryPayload(s: Summary, d: Pick<AppData, "envelopes" | "txns"
     bank_balance: money(s.bank),
     cash_in_hand: money(s.cash),
     pending_in_inbox: d.txns.filter((t) => t.status === "pending").length,
-    categories: [...d.envelopes.map((e) => e.name), "Flex"],
+    envelopes_to_file_under: d.envelopes.map((e) => e.name),
+    bills_to_file_under: d.commitments.map((c) => c.name),
   };
 }
 
-export function txnPayload(t: Txn, envelopes: Envelope[], money: FormatMoney) {
+export function txnPayload(t: Txn, envelopes: Envelope[], bills: Commitment[], money: FormatMoney) {
   return {
     id: t.id,
     merchant: t.merchant,
     amount: money(t.direction === "credit" ? t.amount : -t.amount),
-    category: t.kind === "transfer" ? "Cash withdrawal" : categoryName(envelopes, t.envelopeId),
+    category: categoryLabel(envelopes, bills, t),
     wallet: t.wallet,
     occurred_at: t.occurredAt,
     status: t.status,

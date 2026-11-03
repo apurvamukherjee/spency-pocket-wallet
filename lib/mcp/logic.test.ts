@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { rememberMerchant } from "@/lib/engine/inbox";
 import type { Envelope, Txn } from "@/lib/engine/types";
-import { beforePlanNote, envelopeIdByName, planImport, resolveCategory, toMinor, ToolInputError } from "./logic";
+import { beforePlanNote, categoryByName, planImport, resolveCategory, toMinor, ToolInputError } from "./logic";
 
 const env = (id: string, name: string): Envelope => ({ id, name, weeklyLimit: 50000, locked: false, leftover: "rollover" });
-const envelopes = [env("g", "Groceries"), env("e", "Eating out")];
+const envelopes = [env("g", "Groceries"), env("e", "Eating out"), env("s", "Small stuff")];
+const bills = [{ id: "n", name: "Netflix", amount: 64900, frequency: "monthly" as const, nextDebit: "2026-11-15" }];
+const opts = { bills, fallback: "s" };
 
 describe("toMinor", () => {
   it("parses numbers and strings without floats", () => {
@@ -25,17 +27,25 @@ describe("toMinor", () => {
 });
 
 describe("resolveCategory", () => {
-  it("prefers merchant memory over Claude's suggestion", () => {
+  it("prefers merchant memory over everything", () => {
     const memory = rememberMerchant({}, "Swiggy", "e");
-    expect(resolveCategory(envelopes, memory, "swiggy", "Groceries")).toEqual({ envelopeId: "e", via: "memory" });
+    expect(resolveCategory(envelopes, memory, "swiggy", "Groceries", opts)).toEqual({ envelopeId: "e", commitmentId: null, via: "memory" });
+  });
+  it("files bill payments under the bill, by merchant or suggestion", () => {
+    expect(resolveCategory(envelopes, {}, "NETFLIX", undefined, opts)).toEqual({ envelopeId: null, commitmentId: "n", via: "bill" });
+    expect(resolveCategory(envelopes, {}, "Card payment", "netflix", opts).commitmentId).toBe("n");
   });
   it("maps suggestions to envelope names, loosely", () => {
-    expect(resolveCategory(envelopes, {}, "Zepto", "groceries").envelopeId).toBe("g");
-    expect(resolveCategory(envelopes, {}, "Cafe", "eating").envelopeId).toBe("e");
+    expect(resolveCategory(envelopes, {}, "Zepto", "groceries", opts).envelopeId).toBe("g");
+    expect(resolveCategory(envelopes, {}, "Cafe", "eating", opts).envelopeId).toBe("e");
   });
-  it("falls back to flex, and ignores memory pointing at a deleted envelope", () => {
-    expect(resolveCategory(envelopes, {}, "Zara", "Clothes")).toEqual({ envelopeId: null, via: "flex" });
-    expect(resolveCategory(envelopes, rememberMerchant({}, "X", "gone"), "X").via).toBe("flex");
+  it("sends anything unmatched to the default envelope, never Flex on Claude's say-so", () => {
+    expect(resolveCategory(envelopes, {}, "Zara", "Clothes", opts)).toEqual({ envelopeId: "s", commitmentId: null, via: "default" });
+    expect(resolveCategory(envelopes, {}, "Zara", "Flex", opts).envelopeId).toBe("s");
+    expect(resolveCategory(envelopes, rememberMerchant({}, "X", "gone"), "X", undefined, opts).via).toBe("default");
+  });
+  it("respects a merchant the user filed under Flex themselves", () => {
+    expect(resolveCategory(envelopes, rememberMerchant({}, "Zara", null), "Zara", undefined, opts)).toEqual({ envelopeId: null, commitmentId: null, via: "memory" });
   });
 });
 
@@ -58,7 +68,7 @@ describe("planImport", () => {
     note: null,
     createdAt: "2026-11-01T14:12:00.000Z",
   };
-  const data = { envelopes, memory: {}, txns: [existing] };
+  const data = { envelopes, commitments: bills, memory: {}, txns: [existing], defaultEnvelopeId: "s" };
 
   it("creates pending Claude transactions with categories", () => {
     const plan = planImport(data, [{ amount: "348", merchant: "Swiggy", suggested_category: "Eating out", occurred_at: "2026-11-03T12:48:00+05:30" }], 100, "2026-11-03T08:00:00Z", id);
@@ -93,13 +103,14 @@ describe("planImport", () => {
   });
 });
 
-describe("envelopeIdByName", () => {
-  it("matches names in any case and Flex", () => {
-    expect(envelopeIdByName(envelopes, "eating OUT")).toBe("e");
-    expect(envelopeIdByName(envelopes, "Flex")).toBeNull();
+describe("categoryByName", () => {
+  it("matches envelopes, bills and Flex in any case", () => {
+    expect(categoryByName(envelopes, bills, "eating OUT")).toEqual({ envelopeId: "e", commitmentId: null });
+    expect(categoryByName(envelopes, bills, "netflix")).toEqual({ envelopeId: null, commitmentId: "n" });
+    expect(categoryByName(envelopes, bills, "Flex")).toEqual({ envelopeId: null, commitmentId: null });
   });
   it("explains unknown names", () => {
-    expect(() => envelopeIdByName(envelopes, "Clothes")).toThrow(/Groceries, Eating out, Flex/);
+    expect(() => categoryByName(envelopes, bills, "Clothes")).toThrow(/Groceries, Eating out, Small stuff, Netflix, Flex/);
   });
 });
 

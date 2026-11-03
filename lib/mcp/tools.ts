@@ -6,20 +6,21 @@ import * as rows from "@/lib/data/rows";
 import type { AppData, PlanInput } from "@/lib/data/types";
 import { addDays, dayInMonth, monthOf, toLocalDate, todayIn } from "@/lib/engine/dates";
 import { summarize } from "@/lib/engine/derive";
-import { normalizeMerchant } from "@/lib/engine/inbox";
+import { defaultEnvelopeId, normalizeMerchant } from "@/lib/engine/inbox";
+import { categoryLabel } from "@/lib/data/category";
 import { moneyFormatter, unitOf } from "@/lib/engine/money";
 import { reconcileGap } from "@/lib/engine/reconcile";
 import type { Commitment, Envelope, Txn } from "@/lib/engine/types";
 import type { Supabase } from "@/lib/supabase/client";
 import { supabaseAs } from "@/lib/supabase/token";
-import { beforePlanNote, categoryName, envelopeIdByName, findEnvelope, planImport, summaryPayload, ToolInputError, toMinor, txnPayload } from "./logic";
+import { beforePlanNote, categoryByName, findEnvelope, planImport, summaryPayload, ToolInputError, toMinor, txnPayload } from "./logic";
 
 export const INSTRUCTIONS = `Spency is the user's personal spending tracker. It helps them end each month on a balance they chose.
 
 Logging payments from screenshots (UPI, card, bank or wallet apps):
 1. Call get_summary first to learn the user's currency, envelope names and today's date.
 2. For every payment in the screenshots extract: merchant (who was paid, cleaned up, e.g. "Swiggy" not "SWIGGY*BANGALORE"), amount, the date-time with time zone offset, the reference number (UPI ref / UTR / transaction ID) if visible, and whether money went out (debit) or came in (credit).
-3. Call add_transactions once with all of them. Set suggested_category to the closest envelope name from get_summary, or "Flex" for one-off spends.
+3. Call add_transactions once with all of them. Set suggested_category to the closest envelope or bill name from get_summary (a bill payment like rent or Netflix should use the bill's name). If nothing fits, leave suggested_category out: Spency files it under the user's default envelope (usually Small stuff). Never choose Flex yourself; the user marks Flex when they want it.
 4. Everything you add is pending. Tell the user to confirm it in Spency's Inbox; nothing changes their balances until they do.
 
 Past days and corrections: payments from earlier days go through add_transactions with their real date. To fix something already in Spency (wrong amount, category, date, or a payment that shouldn't be there), call list_transactions to find its id, then update_transaction or remove_transaction. Bills, envelopes and the month plan can be changed with update_commitment, remove_commitment, update_envelope, remove_envelope and update_plan. Say what you're about to change and get a yes before removing anything or changing balances. Only the user can confirm pending payments, in the app.
@@ -64,6 +65,8 @@ function guard<A>(run: (args: A, s: Session) => Promise<unknown>) {
     }
   };
 }
+
+const fallbackEnvelope = (s: Session) => defaultEnvelopeId(s.data.envelopes, s.data.profile.defaultEnvelopeId);
 
 function needsPlan(s: Session) {
   const { plan, profile } = s.data;
@@ -123,7 +126,7 @@ export function registerTools(server: McpServer) {
               reference: z.string().max(64).optional().describe("UPI ref, UTR, or transaction ID if visible"),
               wallet: z.enum(["bank", "cash"]).optional().describe("Default bank (UPI, card and bank transfers are all bank)"),
               direction: z.enum(["debit", "credit"]).optional().describe("debit = money out (default), credit = money in"),
-              suggested_category: z.string().max(60).optional().describe("Closest envelope name from get_summary, or Flex"),
+              suggested_category: z.string().max(60).optional().describe("Closest envelope or bill name from get_summary; leave out if nothing fits"),
               note: z.string().max(500).optional(),
             }),
           )
@@ -134,7 +137,7 @@ export function registerTools(server: McpServer) {
     guard(async ({ transactions }: { transactions: Parameters<typeof planImport>[1] }, s) => {
       const refs = transactions.map((t) => t.reference?.trim()).filter((r): r is string => !!r);
       const txns = await withReferenceMatches(s, refs);
-      const plan = planImport({ ...s.data, txns }, transactions, s.unit, new Date().toISOString(), () => crypto.randomUUID());
+      const plan = planImport({ ...s.data, txns, defaultEnvelopeId: fallbackEnvelope(s) }, transactions, s.unit, new Date().toISOString(), () => crypto.randomUUID());
       if (plan.add.length) {
         const res = await s.sb.from("transactions").insert(plan.add.map(({ txn }) => rows.txnToRow(txn)));
         if (res.error?.code === "23505") throw new ToolInputError("One of these references was just added by another request. Call add_transactions again and it will be skipped.");
@@ -142,14 +145,19 @@ export function registerTools(server: McpServer) {
       }
       return {
         added: plan.add.map(({ txn, via }) => ({
-          ...txnPayload(txn, s.data.envelopes, s.money),
+          ...txnPayload(txn, s.data.envelopes, s.data.commitments, s.money),
           ...withNote(beforePlanNote(txn.occurredAt, s.data.plan?.balanceAt ?? null)),
-          category_from: { memory: "the user's merchant memory", suggestion: "your suggestion", flex: "no matching envelope, so Flex" }[via],
+          category_from: {
+            memory: "the user's merchant memory",
+            bill: "a matching bill (counts as paying it this month)",
+            suggestion: "your suggestion",
+            default: "no match, so the user's default envelope",
+          }[via],
         })),
         skipped_as_duplicates: plan.skipped.map(({ input, duplicateOf }) => ({
           merchant: input.merchant,
           amount: input.amount,
-          matches: txnPayload(duplicateOf, s.data.envelopes, s.money),
+          matches: txnPayload(duplicateOf, s.data.envelopes, s.data.commitments, s.money),
         })),
         next_step: plan.add.length ? "Tell the user these are waiting in Spency's Inbox to confirm." : "Nothing new to add.",
       };
@@ -186,9 +194,9 @@ export function registerTools(server: McpServer) {
           const d = toLocalDate(t.occurredAt, tz);
           return (!args.from || d >= args.from) && (!args.to || d <= args.to);
         })
-        .filter((t) => !wanted || categoryName(s.data.envelopes, t.envelopeId).toLowerCase() === wanted)
+        .filter((t) => !wanted || categoryLabel(s.data.envelopes, s.data.commitments, t).toLowerCase() === wanted)
         .slice(0, args.limit ?? 50);
-      return { count: list.length, transactions: list.map((t) => txnPayload(t, s.data.envelopes, s.money)) };
+      return { count: list.length, transactions: list.map((t) => txnPayload(t, s.data.envelopes, s.data.commitments, s.money)) };
     }),
   );
 
@@ -286,10 +294,10 @@ export function registerTools(server: McpServer) {
           createdAt: now,
         };
         ok(await s.sb.from("transactions").insert(rows.txnToRow(t)));
-        return { added: txnPayload(t, s.data.envelopes, s.money), next_step: "Waiting in the Inbox to confirm." };
+        return { added: txnPayload(t, s.data.envelopes, s.data.commitments, s.money), next_step: "Waiting in the Inbox to confirm." };
       }
       const plan = planImport(
-        s.data,
+        { ...s.data, defaultEnvelopeId: fallbackEnvelope(s) },
         [{ amount: args.amount, merchant: args.merchant?.trim() || "Cash", wallet: "cash", suggested_category: args.suggested_category, occurred_at: args.occurred_at, note: args.note }],
         s.unit,
         now,
@@ -298,7 +306,7 @@ export function registerTools(server: McpServer) {
       if (!plan.add.length) return { skipped_as_duplicate: true };
       const t = plan.add[0].txn;
       ok(await s.sb.from("transactions").insert(rows.txnToRow(t)));
-      return { added: txnPayload(t, s.data.envelopes, s.money), next_step: "Waiting in the Inbox to confirm." };
+      return { added: txnPayload(t, s.data.envelopes, s.data.commitments, s.money), next_step: "Waiting in the Inbox to confirm." };
     }),
   );
 
@@ -312,7 +320,7 @@ export function registerTools(server: McpServer) {
         id: z.string().uuid().describe("Transaction id from list_transactions"),
         amount: amount.optional(),
         merchant: z.string().min(1).max(120).optional(),
-        category: z.string().max(60).optional().describe("Envelope name or Flex"),
+        category: z.string().max(60).optional().describe("Envelope or bill name; Flex only if the user asks"),
         wallet: z.enum(["bank", "cash"]).optional(),
         occurred_at: z.string().optional().describe("ISO 8601 with offset"),
         direction: z.enum(["debit", "credit"]).optional(),
@@ -343,7 +351,7 @@ export function registerTools(server: McpServer) {
         const patch = {
           ...(args.amount !== undefined ? { amount: toMinor(args.amount, s.unit) } : {}),
           ...(args.merchant !== undefined ? { merchant: args.merchant.trim() } : {}),
-          ...(args.category !== undefined ? { envelopeId: envelopeIdByName(s.data.envelopes, args.category) } : {}),
+          ...(args.category !== undefined ? categoryByName(s.data.envelopes, s.data.commitments, args.category) : {}),
           ...(args.wallet !== undefined ? { wallet: args.wallet } : {}),
           ...(when ? { occurredAt: when.toISOString() } : {}),
           ...(args.direction !== undefined ? { direction: args.direction } : {}),
@@ -351,7 +359,7 @@ export function registerTools(server: McpServer) {
         };
         if (Object.keys(patch).length === 0) throw new ToolInputError("Nothing to change. Pass at least one field.");
         ok(await s.sb.from("transactions").update(rows.txnPatchToRow(patch)).eq("id", args.id));
-        if (patch.envelopeId !== undefined && patch.envelopeId !== before.envelopeId) {
+        if (patch.envelopeId !== undefined && !patch.commitmentId && patch.envelopeId !== before.envelopeId) {
           ok(
             await s.sb
               .from("merchant_memory")
@@ -360,8 +368,8 @@ export function registerTools(server: McpServer) {
         }
         const after: Txn = { ...before, ...patch };
         return {
-          before: txnPayload(before, s.data.envelopes, s.money),
-          after: txnPayload(after, s.data.envelopes, s.money),
+          before: txnPayload(before, s.data.envelopes, s.data.commitments, s.money),
+          after: txnPayload(after, s.data.envelopes, s.data.commitments, s.money),
           effect: after.status === "confirmed" ? "Balances and envelopes are updated." : "Still waiting in the Inbox for the user to confirm.",
           ...withNote(beforePlanNote(after.occurredAt, s.data.plan?.balanceAt ?? null)),
         };
@@ -382,7 +390,7 @@ export function registerTools(server: McpServer) {
       const res = await s.sb.from("transactions").update({ status: "rejected" }).eq("id", id).select("*").maybeSingle();
       ok(res);
       if (!res.data) throw new ToolInputError("No payment with that id. Call list_transactions to find it.");
-      return { removed: txnPayload(rows.txnFromRow(res.data), s.data.envelopes, s.money), effect: "No longer counts toward any balance." };
+      return { removed: txnPayload(rows.txnFromRow(res.data), s.data.envelopes, s.data.commitments, s.money), effect: "No longer counts toward any balance." };
     }),
   );
 
