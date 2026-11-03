@@ -11,7 +11,7 @@ Read `SPEC.md` before any work. It is the source of truth. Phases are gated: fin
 - Copy is supportive, never guilt-inducing.
 
 ## Engine decisions (agreed in Phase 1 plan)
-- A week straddling two months is settled whole at its full weekly limit; proration only affects the monthly allocation.
+- Weeks at the plan window edges (straddling a month boundary or the plan start date) are prorated: limit = weekly/7 × days inside the window, and only spending inside the window counts. This keeps projected month-end exactly on target when spending is on plan.
 - Envelope spend counts both wallets. Cash withdrawal is a Bank→Cash transfer, never an expense.
 - Salary adds to spendable only while its credit date is still ahead and no confirmed credit has landed.
 - Cover from multiple saving envelopes is proportional to their savings, largest-remainder rounding to exact paise.
