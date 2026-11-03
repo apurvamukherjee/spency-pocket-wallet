@@ -1,17 +1,18 @@
 @import "tailwindcss";
 
-@theme {
-  --color-bg: #0a0b0d;
-  --color-surface: #121418;
-  --color-raised: #1a1d22;
-  --color-line: #22262c;
-  --color-fg: #eceef2;
-  --color-muted: #8a919b;
-  --color-faint: #565c66;
-  --color-accent: oklch(0.8 0.1 255);
-  --color-ok: oklch(0.8 0.12 160);
-  --color-warn: oklch(0.83 0.12 80);
-  --color-bad: oklch(0.74 0.13 25);
+/* Colors resolve through per-theme variables so Tailwind utilities (bg-surface, text-accent/50…) follow data-theme. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -19,11 +20,41 @@
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@layer base {
-  :root {
-    color-scheme: dark;
-  }
+/* Dark is the default theme. */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0a0b0d;
+  --surface: #121418;
+  --raised: #1a1d22;
+  --line: #22262c;
+  --fg: #eceef2;
+  --muted: #8a919b;
+  --faint: #565c66;
+  --accent: oklch(0.8 0.1 255);
+  --ok: oklch(0.8 0.12 160);
+  --warn: oklch(0.83 0.12 80);
+  --bad: oklch(0.74 0.13 25);
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset;
+}
 
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f6f3;
+  --surface: #ffffff;
+  --raised: #f0f0ec;
+  --line: #e4e4de;
+  --fg: #111214;
+  --muted: #5f646c;
+  --faint: #9a9fa6;
+  --accent: oklch(0.52 0.15 260);
+  --ok: oklch(0.56 0.13 160);
+  --warn: oklch(0.62 0.14 65);
+  --bad: oklch(0.57 0.17 25);
+  --shadow: 0 1px 2px rgb(17 18 20 / 0.04), 0 4px 16px -8px rgb(17 18 20 / 0.08);
+}
+
+@layer base {
   html {
     background: var(--color-bg);
     -webkit-tap-highlight-color: transparent;
@@ -50,6 +81,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: 20px;
+  box-shadow: var(--shadow);
 }
 
 @utility field {
@@ -106,7 +138,7 @@
   background: var(--color-raised);
   color: var(--color-fg);
   &:hover {
-    background: color-mix(in oklch, var(--color-raised) 80%, white);
+    background: color-mix(in oklch, var(--color-raised) 85%, var(--color-fg));
   }
 }
 
@@ -128,7 +160,7 @@ dialog.sheet[open] {
   animation: sheet-up 280ms var(--ease-out-soft);
 }
 dialog.sheet::backdrop {
-  background: rgb(0 0 0 / 0.6);
+  background: color-mix(in oklch, var(--color-bg) 40%, rgb(0 0 0 / 0.6));
   backdrop-filter: blur(2px);
 }
 @media (min-width: 640px) {
