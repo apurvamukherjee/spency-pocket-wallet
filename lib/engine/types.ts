@@ -68,4 +68,9 @@ export type MonthPlan = {
   salary: { amount: Minor; date: ISODate } | null;
   /** 0 = Sunday … 6 = Saturday. */
   weekStart: number;
+  /**
+   * Bills whose payment earlier this month (before the starting balance) hasn't actually gone out yet.
+   * By default such a payment is assumed to be inside the starting balance.
+   */
+  unpaidBills?: string[];
 };

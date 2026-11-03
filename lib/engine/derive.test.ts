@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarize, type SpencyData, walletBalances } from "./derive";
+import { billStatus, summarize, type SpencyData, walletBalances } from "./derive";
 import { major as rupees } from "./money";
 import type { Envelope, Txn } from "./types";
 
@@ -228,5 +228,42 @@ describe("time zones", () => {
     const s = summarize(jp, "2026-11-03");
     expect(s.weeks[0].settlement.envelopes[0].limit).toBe(1429);
     expect(s.projected).toBe(200000);
+  });
+});
+
+describe("bill status and manual overrides", () => {
+  // Plan started Tue 3 Nov. Gym is due on the 1st (already passed), Phone on the 25th.
+  const gym = { id: "gym", name: "Gym", amount: rupees(750), frequency: "monthly" as const, nextDebit: "2026-12-01" };
+  const phone = { id: "phone", name: "Phone", amount: rupees(250), frequency: "monthly" as const, nextDebit: "2026-11-25" };
+  const plan = { ...base().plan, balanceAt: "2026-11-03T10:00:00+05:30" };
+  const data = (over: Partial<SpencyData> = {}) => base({ plan, commitments: [gym, phone], ...over });
+
+  it("assumes a bill whose day passed before the plan is already paid", () => {
+    expect(billStatus(plan, gym, [])).toEqual({ state: "assumed_paid", due: 0, paymentIds: [] });
+    expect(billStatus(plan, phone, [])).toEqual({ state: "due", due: rupees(250), paymentIds: [] });
+    expect(summarize(data(), "2026-11-03").commitmentsRemaining).toBe(rupees(250));
+  });
+
+  it("'not paid yet' sets the money aside again without touching the projection", () => {
+    const before = summarize(data(), "2026-11-03");
+    const unpaid = { ...plan, unpaidBills: ["gym"] };
+    const after = summarize(data({ plan: unpaid }), "2026-11-03");
+    expect(billStatus(unpaid, gym, []).state).toBe("due");
+    expect(after.commitmentsRemaining).toBe(rupees(1000));
+    expect(after.flexBudget).toBe(before.flexBudget - rupees(750));
+    expect(after.projected).toBe(rupees(70000));
+  });
+
+  it("logging a payment marks the bill paid and keeps the projection honest", () => {
+    const paid = txn("2026-11-03", 250, { commitmentId: "phone", merchant: "Phone" });
+    const s = summarize(data({ txns: [paid] }), "2026-11-03");
+    expect(billStatus(plan, phone, [paid])).toEqual({ state: "paid", due: 0, paymentIds: [paid.id] });
+    expect(s.commitmentsRemaining).toBe(0);
+    expect(s.projected).toBe(rupees(70000));
+  });
+
+  it("a yearly bill not due this month has no status", () => {
+    const yearly = { ...phone, id: "y", frequency: "yearly" as const, nextDebit: "2027-03-10" };
+    expect(billStatus(plan, yearly, []).state).toBe("none");
   });
 });

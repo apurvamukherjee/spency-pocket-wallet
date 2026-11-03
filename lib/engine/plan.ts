@@ -1,4 +1,4 @@
-import { addDays, addMonths, monthEnd, overlapDays, toLocalDate, weekStartOf } from "./dates";
+import { addDays, addMonths, monthEnd, monthStart, overlapDays, toLocalDate, weekStartOf } from "./dates";
 import { unitOf } from "./money";
 import type { Commitment, Envelope, ISODate, MonthPlan, Minor } from "./types";
 
@@ -42,9 +42,14 @@ export function monthlyEquivalent(c: Commitment): Minor {
   return c.amount;
 }
 
+/** Where a bill's dues are counted from: the plan start, or the 1st if the user said an earlier payment is still unpaid. */
+export function billFrom(plan: MonthPlan, c: Commitment): ISODate {
+  return plan.unpaidBills?.includes(c.id) ? monthStart(plan.month) : planWindow(plan).start;
+}
+
 export function commitmentsInPlan(plan: MonthPlan, cs: Commitment[]): Minor {
-  const { start, end } = planWindow(plan);
-  return cs.reduce((sum, c) => sum + c.amount * commitmentDates(c, start, end).length, 0);
+  const { end } = planWindow(plan);
+  return cs.reduce((sum, c) => sum + c.amount * commitmentDates(c, billFrom(plan, c), end).length, 0);
 }
 
 /** weekly_limit / 7 × days of that week inside [from, to], rounded to a whole major unit so budgets read cleanly. */

@@ -1,6 +1,7 @@
-import { addDays, diffDays, toLocalDate } from "./dates";
+import { addDays, diffDays, monthStart, toLocalDate } from "./dates";
 import { floorToUnit, unitOf } from "./money";
 import {
+  billFrom,
   commitmentDates,
   commitmentsInPlan,
   flexBudget,
@@ -99,15 +100,28 @@ export function flexSpend(plan: MonthPlan, txns: Txn[], from: ISODate, to: ISODa
     .reduce((sum, t) => sum - signed(t), 0);
 }
 
-export function commitmentsRemaining(plan: MonthPlan, cs: Commitment[], txns: Txn[]): Minor {
+export type BillStatus = {
+  /** paid: a payment is logged this month · assumed_paid: went out before the starting balance · due · none: not this month. */
+  state: "paid" | "assumed_paid" | "due" | "none";
+  /** Still to go out this month. */
+  due: Minor;
+  /** Confirmed payments for this bill this month, so they can be undone. */
+  paymentIds: string[];
+};
+
+export function billStatus(plan: MonthPlan, c: Commitment, txns: Txn[]): BillStatus {
   const { start, end } = planWindow(plan);
-  return cs.reduce((sum, c) => {
-    const due = c.amount * commitmentDates(c, start, end).length;
-    const paid = txns
-      .filter((t) => confirmedAfter(plan, t) && t.commitmentId === c.id && inRange(plan, t, start, end))
-      .reduce((s, t) => s - signed(t), 0);
-    return sum + Math.max(0, due - paid);
-  }, 0);
+  const owed = c.amount * commitmentDates(c, billFrom(plan, c), end).length;
+  const payments = txns.filter((t) => confirmedAfter(plan, t) && t.commitmentId === c.id && inRange(plan, t, start, end));
+  const due = Math.max(0, owed - payments.reduce((s, t) => s - signed(t), 0));
+  const before = start > monthStart(plan.month) ? commitmentDates(c, monthStart(plan.month), addDays(start, -1)).length > 0 : false;
+  const assumed = before && !plan.unpaidBills?.includes(c.id);
+  const state = due > 0 ? "due" : payments.length ? "paid" : assumed ? "assumed_paid" : "none";
+  return { state, due, paymentIds: payments.map((t) => t.id) };
+}
+
+export function commitmentsRemaining(plan: MonthPlan, cs: Commitment[], txns: Txn[]): Minor {
+  return cs.reduce((sum, c) => sum + billStatus(plan, c, txns).due, 0);
 }
 
 /** End-of-day bank + cash from plan start to `today`, for the month chart. */
