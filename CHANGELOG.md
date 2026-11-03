@@ -14,7 +14,7 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 - Email confirmation and password reset links failed as "expired" when opened in another browser or pre-opened by a mail scanner. Links now work on any device and are only used when you press Continue; failures explain why and offer a resend.
 
 ### Changed
-- Hint text meets WCAG AA contrast in both themes; screen readers hear inbox counts as "4 to review".
+- All text meets WCAG AA contrast in both themes (axe: 0 serious issues on every screen): darker light-theme status colors and stronger hint text. Screen readers hear inbox counts as "4 to review".
 - Claude connector: a remote MCP server at `/api/mcp` with `get_summary`, `add_transactions`, `list_transactions`, `update_envelope`, `add_commitment`, `log_cash` and `reconcile`. Everything Claude adds arrives pending.
 - OAuth 2.1 sign-in for connectors through Supabase Auth, with a Spency consent screen and Settings → Connected apps to disconnect.
 - Settings → Connect Claude with the connector URL and setup steps.
