@@ -4,6 +4,12 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added
+- Claude can correct the past: `update_transaction`, `remove_transaction`, `update_commitment`, `remove_commitment`, `remove_envelope` and `update_plan`. Payments dated before the plan's starting balance are flagged so Claude can explain they don't change balances. Confirming new payments stays in the app.
+
+### Fixed
+- Bills showed only what was still due as "This month", so bills already paid this month disappeared from the total. Bills now shows the full monthly total and what's still due, and marks bills done for the month.
+
 ### Changed
 - Salary asks only for the pay day (1–31) in Settings and onboarding, not a full date. The year and month come from the plan; short months clamp (31 → the 28th in February).
 

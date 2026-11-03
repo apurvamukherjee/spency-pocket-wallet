@@ -60,8 +60,13 @@ Spency runs a remote [MCP](https://modelcontextprotocol.io) server at `/api/mcp`
 | `add_commitment` | Add a recurring bill. |
 | `log_cash` | Log a cash spend or a withdrawal (pending, like everything Claude adds). |
 | `reconcile` | Compare your real bank balance with Spency's and help find the gap. |
+| `update_transaction` | Correct any payment, including past days: amount, merchant, category, wallet, date, note. |
+| `remove_transaction` | Take a mistaken or duplicate payment out of your balances. |
+| `update_commitment` / `remove_commitment` | Change or stop tracking a bill. |
+| `remove_envelope` | Delete an envelope; its history moves to Flex. |
+| `update_plan` | Change your target, pay and pay day, week start, or reset balances to what you have now. |
 
-Claude can't confirm transactions for you: nothing touches your balances until you swipe it in.
+Claude can't confirm transactions for you: new payments wait in your Inbox until you swipe them in. It can correct or remove existing ones when you ask, and it's told to check with you before removing anything or changing balances.
 
 ### Connect it to Claude
 
