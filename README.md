@@ -28,6 +28,7 @@ You tell Spency your balance today and the balance you want at month-end. It set
 - **Projected month-end** against your target, updated with every payment.
 - **Inbox** of payments Claude read from your screenshots. Swipe right to confirm, left to dismiss. Duplicates are flagged.
 - **Merchant memory.** Recategorize a shop once; future payments there land in the right envelope.
+- **Bills you can tick off.** Mark a bill paid and Spency logs the payment; untick one it assumed was paid and the money is set aside again.
 - **Cash** withdrawals are transfers, not spending. Cash purchases still count toward envelopes.
 - **Daily reconcile** against your real bank balance, with a streak.
 - **Rebalance suggestions.** If one envelope goes over three weeks running while another stays under, Spency suggests moving money between them, applied in one tap.
