@@ -10,10 +10,12 @@ import { supabaseConfigured } from "@/lib/supabase/env";
 import { applyTheme } from "@/lib/theme";
 import { Avatar } from "@/components/shell/Nav";
 import { Segmented } from "@/components/ui/controls";
+import { ConnectClaude } from "./ConnectClaude";
 import { Icon } from "@/components/ui/Icon";
 
 export function SettingsView() {
   const hasPlan = useHasCurrentPlan();
+  const mode = useMode();
   return (
     <div className="space-y-12">
       <header>
@@ -22,6 +24,7 @@ export function SettingsView() {
       <ProfileCard />
       <Preferences />
       {hasPlan ? <PlanForm /> : <NoPlan />}
+      {mode === "cloud" && <ConnectClaude />}
       <Account />
     </div>
   );
