@@ -44,7 +44,7 @@ npm run build
 |---|---|
 | `lib/engine/` | The budget engine: pure TypeScript, no React or I/O. Settlement, projection, proration. Every change here needs a test. |
 | `lib/data/` | Data layer. `reducers.ts` holds every state change as a pure function; `demo.tsx` and `cloud.tsx` apply them locally or to Supabase. |
-| `supabase/migrations/` | Postgres schema and row level security. Add a new migration file, never edit an applied one. |
+| `supabase/migrations/` | Postgres schema and row level security. Add a new migration file, never edit an applied one. `supabase/tests/rls.test.ts` runs every migration in an in-process Postgres and tries to read or change one user's data as another; extend it when you add a table. |
 | `components/`, `app/` | UI. One folder per screen. |
 
 ## House rules
