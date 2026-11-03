@@ -5,7 +5,7 @@ import { enginePlan } from "@/lib/data/plan";
 import * as rows from "@/lib/data/rows";
 import type { AppData, PlanInput } from "@/lib/data/types";
 import { addDays, dayInMonth, monthOf, toLocalDate, todayIn } from "@/lib/engine/dates";
-import { summarize } from "@/lib/engine/derive";
+import { billStatus, summarize } from "@/lib/engine/derive";
 import { defaultEnvelopeId, normalizeMerchant } from "@/lib/engine/inbox";
 import { categoryLabel } from "@/lib/data/category";
 import { moneyFormatter, unitOf } from "@/lib/engine/money";
@@ -23,7 +23,7 @@ Logging payments from screenshots (UPI, card, bank or wallet apps):
 3. Call add_transactions once with all of them. Set suggested_category to the closest envelope or bill name from get_summary (a bill payment like rent or Netflix should use the bill's name). If nothing fits, leave suggested_category out: Spency files it under the user's default envelope (usually Small stuff). Never choose Flex yourself; the user marks Flex when they want it.
 4. Everything you add is pending. Tell the user to confirm it in Spency's Inbox; nothing changes their balances until they do.
 
-Past days and corrections: payments from earlier days go through add_transactions with their real date. To fix something already in Spency (wrong amount, category, date, or a payment that shouldn't be there), call list_transactions to find its id, then update_transaction or remove_transaction. Bills, envelopes and the month plan can be changed with update_commitment, remove_commitment, update_envelope, remove_envelope and update_plan. Say what you're about to change and get a yes before removing anything or changing balances. Only the user can confirm pending payments, in the app.
+Past days and corrections: payments from earlier days go through add_transactions with their real date. To fix something already in Spency (wrong amount, category, date, or a payment that shouldn't be there), call list_transactions to find its id, then update_transaction or remove_transaction. Bills, envelopes and the month plan can be changed with update_commitment, remove_commitment, update_envelope, remove_envelope and update_plan. When the user says a bill has or hasn't gone out ("Netflix hasn't gone out yet", "rent is paid"), use set_bill_paid. Say what you're about to change and get a yes before removing anything or changing balances. Only the user can confirm pending payments, in the app.
 
 Questions like "can I afford a 1,500 dinner?": call get_summary and compare with safe_to_spend_today (today's comfortable amount) and flex_left (room for unplanned spends). Be honest and kind; never guilt the user.
 
@@ -512,6 +512,76 @@ export function registerTools(server: McpServer) {
         };
       },
     ),
+  );
+
+  server.registerTool(
+    "set_bill_paid",
+    {
+      title: "Mark a bill paid or not paid this month",
+      description:
+        "Tell Spency whether a bill has gone out this month. paid=false: a bill Spency assumed was paid is set aside again as not paid yet, or a logged payment for it is removed (ask the user first). paid=true: logs the payment as pending in the Inbox (the bill shows paid once the user confirms it); if the bill was marked not paid yet but actually went out before this month's plan started, pass paid_at with that earlier date and it's simply undone. Find bills by name from get_summary.",
+      inputSchema: z.object({
+        name: z.string().min(1).max(60).describe("Bill name"),
+        paid: z.boolean(),
+        amount: amount.optional().describe("Amount actually paid, if different from the bill"),
+        paid_at: z.string().optional().describe("When it went out, ISO 8601 with offset; defaults to now"),
+      }),
+    },
+    guard(async (args: { name: string; paid: boolean; amount?: number | string; paid_at?: string }, s) => {
+      needsPlan(s);
+      const stored = s.data.plan;
+      if (!stored) throw new ToolInputError("No plan for this month yet.");
+      const plan = enginePlan(stored, s.data.profile);
+      const c = findCommitment(s.data.commitments, args.name);
+      const status = billStatus(plan, c, s.data.txns);
+      const unpaid = stored.unpaidBills ?? [];
+      const setUnpaid = async (ids: string[]) => ok(await s.sb.from("month_plans").update({ unpaid_bills: ids }).eq("id", stored.id));
+
+      if (!args.paid) {
+        if (status.state === "due") return { bill: c.name, status: "Already not paid", still_due: s.money(status.due) };
+        if (status.paymentIds.length) {
+          ok(await s.sb.from("transactions").update({ status: "rejected" }).in("id", status.paymentIds));
+          return { bill: c.name, status: "Due again", removed_payments: status.paymentIds.length };
+        }
+        if (status.state === "assumed_paid") {
+          await setUnpaid([...unpaid, c.id]);
+          return { bill: c.name, status: "Not paid yet", effect: `${s.money(c.amount)} is set aside again for it this month.` };
+        }
+        return { bill: c.name, status: "Not due this month", next_debit: c.nextDebit };
+      }
+
+      if (status.state === "paid" || status.state === "assumed_paid") return { bill: c.name, status: "Already paid this month" };
+      if (status.state === "none") return { bill: c.name, status: "Not due this month", next_debit: c.nextDebit };
+      const when = args.paid_at ? new Date(args.paid_at) : new Date();
+      if (Number.isNaN(when.getTime())) throw new ToolInputError(`"${args.paid_at}" isn't a date-time.`);
+      if (unpaid.includes(c.id) && status.paymentIds.length === 0 && when.getTime() <= Date.parse(stored.balanceAt)) {
+        await setUnpaid(unpaid.filter((id) => id !== c.id));
+        return { bill: c.name, status: "Paid before this month's plan", effect: "Back to done; the starting balance already included it." };
+      }
+      const t: Txn = {
+        id: crypto.randomUUID(),
+        wallet: "bank",
+        amount: args.amount !== undefined ? toMinor(args.amount, s.unit) : status.due,
+        direction: "debit",
+        kind: "expense",
+        merchant: c.name,
+        envelopeId: null,
+        commitmentId: c.id,
+        occurredAt: when.toISOString(),
+        source: "claude",
+        status: "pending",
+        upiRef: null,
+        note: null,
+        createdAt: new Date().toISOString(),
+      };
+      ok(await s.sb.from("transactions").insert(rows.txnToRow(t)));
+      return {
+        bill: c.name,
+        status: "Payment waiting in the Inbox",
+        payment: txnPayload(t, s.data.envelopes, s.data.commitments, s.money),
+        next_step: "Tell the user to confirm it in Spency; the bill shows paid once they do.",
+      };
+    }),
   );
 
   server.registerTool(

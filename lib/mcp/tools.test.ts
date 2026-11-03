@@ -31,6 +31,7 @@ it("advertises every Spency tool with a JSON input schema", async () => {
     "remove_commitment",
     "remove_envelope",
     "remove_transaction",
+    "set_bill_paid",
     "update_commitment",
     "update_envelope",
     "update_plan",
