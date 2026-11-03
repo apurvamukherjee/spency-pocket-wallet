@@ -1,15 +1,14 @@
 # Spency
 
-A calm spending tracker that keeps you on course for the month-end balance you planned, kept up to date by Claude.
-
-[![CI](https://github.com/apurvamukherjee/spency-pocket-wallet/actions/workflows/ci.yml/badge.svg)](https://github.com/apurvamukherjee/spency-pocket-wallet/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
-![Spency: end every month on the balance you planned](docs/social-preview.png)
+A budgeting app for people paid monthly that shows what's safe to spend today and lets Claude log payments from your screenshots.
 
 ```bash
 git clone https://github.com/apurvamukherjee/spency-pocket-wallet.git && cd spency-pocket-wallet && npm install && npm run dev
 ```
+
+![Demo: payments from Claude are swiped into the budget and Home updates](docs/demo.gif) <!-- TODO: swap for a 5–10s clip that starts in Claude with a payment screenshot -->
+
+**[Try the live demo](https://spency-pocket-wallet-1ioz.vercel.app/login)** (no account needed: choose "Explore a demo month") · [![CI](https://github.com/apurvamukherjee/spency-pocket-wallet/actions/workflows/ci.yml/badge.svg)](https://github.com/apurvamukherjee/spency-pocket-wallet/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 <p>
   <img src="docs/screenshots/home-mobile.png" width="240" alt="Home in dark mode: safe to spend today, status, and a summary of this week">
@@ -19,7 +18,7 @@ git clone https://github.com/apurvamukherjee/spency-pocket-wallet.git && cd spen
 
 <img src="docs/screenshots/desktop.png" alt="Desktop: navigation, Home, and the persistent Inbox of payments from Claude">
 
-> **Status:** All four phases are built. A final end-to-end test pass and the open-source launch checklist are next.
+> **Status:** v0.2.0. All four phases are built and tested end to end; feedback and contributions welcome.
 
 ## What it does
 
@@ -148,7 +147,7 @@ One Next.js 16 app serves the UI, the server actions and the MCP server.
 | 1 | Screens and weekly settlement engine on local data | done |
 | 2 | Supabase schema, row level security, accounts, sync, any currency, light theme | done |
 | 3 | MCP server with OAuth, Claude connector setup guide | done |
-| 4 | Pattern detection, rebalance suggestions, recent activity, hard reset, accessibility, deployment notes | done, in review |
+| 4 | Pattern detection, rebalance suggestions, recent activity, hard reset, accessibility, deployment notes | done |
 
 The full product spec is in [SPEC.md](SPEC.md) and the changes are in [CHANGELOG.md](CHANGELOG.md).
 

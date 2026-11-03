@@ -35,9 +35,10 @@
     "vitest": "^5.1.0"
   },
   "license": "MIT",
-  "description": "A calm spending tracker that keeps you on course for the month-end balance you planned, kept up to date by Claude.",
+  "description": "A budgeting app for people paid monthly that shows what's safe to spend today and lets Claude log payments from your screenshots.",
   "repository": {
     "type": "git",
     "url": "https://github.com/apurvamukherjee/spency-pocket-wallet.git"
-  }
+  },
+  "homepage": "https://spency-pocket-wallet-1ioz.vercel.app"
 }
