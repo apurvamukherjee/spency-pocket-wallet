@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { addDays, diffDays } from "@/lib/engine/dates";
 import { useActions, useData, useFormat, useSummary } from "@/lib/data/context";
-import { monthEnd, monthOf, monthStart } from "@/lib/engine/dates";
+import { monthOf } from "@/lib/engine/dates";
+import { billStatus, type BillStatus } from "@/lib/engine/derive";
 import { commitmentDates, monthlyEquivalent } from "@/lib/engine/plan";
 import type { Commitment, Frequency, ISODate } from "@/lib/engine/types";
 import { Icon } from "@/components/ui/Icon";
@@ -15,26 +16,44 @@ const nextDate = (c: Commitment, today: ISODate) => commitmentDates(c, today, ad
 const FREQ_LABEL: Record<Frequency, string> = { weekly: "Weekly", monthly: "Monthly", yearly: "Yearly" };
 
 export function CommitmentsView() {
-  const { commitments } = useData();
+  const { commitments, plan, txns } = useData();
+  const { addTxn, setStatus, setPlan } = useActions();
   const s = useSummary();
   const fmt = useFormat();
   const [editing, setEditing] = useState<Commitment | "new" | null>(null);
   const month = monthOf(s.today);
   const rows = commitments
-    .map((c) => ({
-      c,
-      next: nextDate(c, s.today),
-      // Already went out earlier this month (before the plan's starting balance, or before today).
-      doneThisMonth: commitmentDates(c, monthStart(month), monthEnd(month)).some((d) => d < s.today),
-    }))
+    .map((c) => ({ c, next: nextDate(c, s.today), status: billStatus(plan, c, txns) }))
     .sort((a, b) => a.next.localeCompare(b.next));
+  const unpaid = plan.unpaidBills ?? [];
+
+  /** Every direction has a real effect, so balances stay derivable from payments. */
+  function togglePaid(c: Commitment, status: BillStatus) {
+    const paid = status.state === "paid" || status.state === "assumed_paid";
+    if (paid) {
+      if (status.paymentIds.length) setStatus(status.paymentIds, "rejected");
+      else setPlan({ unpaidBills: [...unpaid, c.id] });
+    } else if (unpaid.includes(c.id) && status.paymentIds.length === 0) {
+      // Undo "not paid yet" rather than logging money that already went out before the plan.
+      setPlan({ unpaidBills: unpaid.filter((id) => id !== c.id) });
+    } else {
+      addTxn({
+        amount: status.due,
+        wallet: "bank",
+        merchant: c.name,
+        commitmentId: c.id,
+        envelopeId: null,
+        occurredAt: new Date().toISOString(),
+      });
+    }
+  }
   const monthlyTotal = commitments.reduce((sum, c) => sum + monthlyEquivalent(c), 0);
 
   return (
     <div className="space-y-10">
       <header>
         <h1 className="text-2xl font-medium tracking-tight">Bills</h1>
-        <p className="mt-1 text-sm text-muted">Fixed debits are set aside first, before envelopes and flex.</p>
+        <p className="mt-1 text-sm text-muted">Fixed debits are set aside first, before envelopes and flex. Tick a bill once it&apos;s paid.</p>
       </header>
 
       <section className="card grid grid-cols-2 gap-4 p-5">
@@ -55,27 +74,57 @@ export function CommitmentsView() {
           </p>
         )}
         <ul className="divide-y divide-line">
-          {rows.map(({ c, next, doneThisMonth }) => {
+          {rows.map(({ c, next, status }) => {
             const inDays = diffDays(s.today, next);
+            const when = inDays === 0 ? "today" : inDays === 1 ? "tomorrow" : `in ${inDays} days`;
+            const paid = status.state === "paid" || status.state === "assumed_paid";
             return (
-              <li key={c.id}>
-                <button type="button" onClick={() => setEditing(c)} className="flex w-full items-center justify-between gap-4 py-4 text-left">
+              <li key={c.id} className="flex items-center gap-3">
+                {status.state !== "none" && (
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={paid}
+                    aria-label={`${c.name} paid this month`}
+                    onClick={() => togglePaid(c, status)}
+                    className={`grid size-6 shrink-0 place-items-center rounded-full border transition-colors ${paid ? "border-ok bg-ok text-bg" : "border-faint text-transparent hover:border-fg"}`}
+                  >
+                    <Icon name="check" size={14} />
+                  </button>
+                )}
+                <button type="button" onClick={() => setEditing(c)} className="flex min-w-0 flex-1 items-center justify-between gap-4 py-4 text-left">
                   <div className="min-w-0">
                     <p className="truncate text-[15px]">{c.name}</p>
                     <p className="mt-0.5 text-[13px] text-muted">
-                      {doneThisMonth && monthOf(next) !== month ? (
+                      {status.state === "paid" ? (
+                        <>
+                          <span className="text-ok">Paid this month</span>
+                          {monthOf(next) !== month && <> · next {fmt.shortDay(next)}</>} ·{" "}
+                        </>
+                      ) : status.state === "assumed_paid" ? (
                         <>
                           <span className="text-ok">Done this month</span> · next {fmt.shortDay(next)} ·{" "}
                         </>
+                      ) : status.state === "due" ? (
+                        <>
+                          {unpaid.includes(c.id) && monthOf(next) !== month ? (
+                            <span className="text-warn">Not paid yet</span>
+                          ) : (
+                            <>
+                              Due {fmt.shortDay(next)} · {when}
+                            </>
+                          )}{" "}
+                          ·{" "}
+                        </>
                       ) : (
                         <>
-                          {fmt.shortDay(next)} · {inDays === 0 ? "today" : inDays === 1 ? "tomorrow" : `in ${inDays} days`} ·{" "}
+                          Next {fmt.shortDay(next)} ·{" "}
                         </>
                       )}
                       {FREQ_LABEL[c.frequency].toLowerCase()}
                     </p>
                   </div>
-                  <p className="text-[15px] tabular-nums">{fmt.money(c.amount)}</p>
+                  <p className={`text-[15px] tabular-nums ${paid ? "text-muted" : ""}`}>{fmt.money(c.amount)}</p>
                 </button>
               </li>
             );
