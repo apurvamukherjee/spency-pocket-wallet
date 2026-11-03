@@ -12,6 +12,8 @@ export type Profile = {
   locale: string;
   timeZone: string;
   theme: Theme;
+  /** Envelope for payments nothing else places; unset → "Small stuff", then Flex. */
+  defaultEnvelopeId?: string | null;
 };
 
 /** A month plan as stored; currency and time zone come from the profile at read time. */
@@ -32,7 +34,7 @@ export type AppData = {
 export type NewTxn = Pick<Txn, "amount" | "wallet" | "merchant" | "occurredAt"> &
   Partial<Pick<Txn, "kind" | "direction" | "envelopeId" | "commitmentId" | "note" | "source" | "status" | "upiRef">>;
 
-export type TxnPatch = Partial<Pick<Txn, "amount" | "merchant" | "envelopeId" | "wallet" | "note" | "occurredAt" | "direction">>;
+export type TxnPatch = Partial<Pick<Txn, "amount" | "merchant" | "envelopeId" | "commitmentId" | "wallet" | "note" | "occurredAt" | "direction">>;
 
 export type ProfilePatch = Partial<Omit<Profile, "email">>;
 

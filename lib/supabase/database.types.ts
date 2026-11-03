@@ -14,6 +14,7 @@ export type ProfileRow = {
   locale: string;
   time_zone: string;
   theme: "dark" | "light";
+  default_envelope_id: string | null;
   created_at: string;
 };
 

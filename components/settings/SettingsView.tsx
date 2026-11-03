@@ -6,6 +6,7 @@ import { type ReactNode, useMemo, useState } from "react";
 import { useActions, useAppData, useFormat, useMode, useSignOut, useSummary, useHasCurrentPlan } from "@/lib/data/context";
 import { useDemoStore } from "@/lib/data/demo";
 import { dayInMonth } from "@/lib/engine/dates";
+import { defaultEnvelopeId } from "@/lib/engine/inbox";
 import type { Theme } from "@/lib/data/types";
 import { currencyOptions, localeOptions, timeZoneOptions } from "@/lib/locale";
 import { supabaseConfigured } from "@/lib/supabase/env";
@@ -144,7 +145,34 @@ function Preferences() {
         </div>
         <p className="text-xs text-faint">Switching currency relabels your amounts; it doesn&apos;t convert them.</p>
       </Section>
+
+      <Sorting />
     </>
+  );
+}
+
+/** Where payments go when merchant memory and Claude can't place them. Flex is only ever chosen by hand. */
+function Sorting() {
+  const { profile, envelopes } = useAppData();
+  const { updateProfile } = useActions();
+  const current = defaultEnvelopeId(envelopes, profile.defaultEnvelopeId);
+  if (envelopes.length === 0) return null;
+  return (
+    <Section title="Sorting" hint="Payments Spency and Claude can't match to an envelope go here. You can still move any payment to Flex yourself.">
+      <Select
+        label="Unsorted payments go to"
+        value={current ?? "flex"}
+        onChange={(v) => updateProfile({ defaultEnvelopeId: v === "flex" ? null : v })}
+      >
+        {envelopes.map((e) => (
+          <option key={e.id} value={e.id}>
+            {e.name}
+          </option>
+        ))}
+        {/* ponytail: Flex as a default only when there's no "Small stuff" envelope, since null means "use Small stuff". */}
+        {current === null && <option value="flex">Flex</option>}
+      </Select>
+    </Section>
   );
 }
 

@@ -81,6 +81,7 @@ describe("another user", () => {
     ["attach a payment to the owner's bill", `insert into transactions (wallet, amount, direction, occurred_at, commitment_id) values ('bank', 100, 'debit', now(), '${BILL_A}')`],
     ["point merchant memory at the owner's envelope", `insert into merchant_memory (merchant, envelope_id) values ('x', '${ENV_A}')`],
     ["create profiles", `insert into profiles (id) values ('${B}')`],
+    ["point their default envelope at the owner's envelope", `update profiles set default_envelope_id = '${ENV_A}' where id = '${B}'`],
   ])("cannot %s", async (_, sql) => {
     await expect(as(B, () => db.exec(sql))).rejects.toThrow();
   });

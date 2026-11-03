@@ -23,6 +23,7 @@ export const profileFromRow = (r: ProfileRow, email: string | null): Profile => 
   locale: r.locale,
   timeZone: r.time_zone,
   theme: r.theme,
+  defaultEnvelopeId: r.default_envelope_id ?? null,
 });
 
 export function profileToRow(p: ProfilePatch): Update<"profiles"> {
@@ -32,6 +33,7 @@ export function profileToRow(p: ProfilePatch): Update<"profiles"> {
   if (p.locale !== undefined) out.locale = p.locale;
   if (p.timeZone !== undefined) out.time_zone = p.timeZone;
   if (p.theme !== undefined) out.theme = p.theme;
+  if (p.defaultEnvelopeId !== undefined) out.default_envelope_id = p.defaultEnvelopeId;
   return out;
 }
 
@@ -147,6 +149,7 @@ export function txnPatchToRow(p: TxnPatch): Update<"transactions"> {
   if (p.amount !== undefined) out.amount = p.amount;
   if (p.merchant !== undefined) out.merchant = p.merchant;
   if (p.envelopeId !== undefined) out.envelope_id = p.envelopeId;
+  if (p.commitmentId !== undefined) out.commitment_id = p.commitmentId;
   if (p.wallet !== undefined) out.wallet = p.wallet;
   if (p.note !== undefined) out.note = p.note;
   if (p.occurredAt !== undefined) out.occurred_at = p.occurredAt;
