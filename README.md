@@ -28,6 +28,10 @@ You tell Spency your balance today and the balance you want at month-end. It set
 - **Projected month-end** against your target, updated with every payment.
 - **Inbox** of payments Claude read from your screenshots. They appear as Claude sends them, no refresh needed. Swipe right to confirm, left to dismiss. Duplicates are flagged.
 - **Merchant memory.** Recategorize a shop once; future payments there land in the right envelope.
+- **Yearly bills without the shock.** Insurance or an annual subscription is saved for a little each month, so the month it's due feels like any other.
+- **Refunds and extra income.** A refund goes back into the envelope it came from; extra income can be spent this month or saved.
+- **Works when you're overdrawn.** Balances and targets can be negative, so you can plan your way out of an overdraft.
+- **Off track? A real next step.** Spency tells you how much less a day gets you back to your target, or kindly says when it can't happen this month.
 - **Bills you can tick off.** Mark a bill paid and Spency logs the payment; untick one it assumed was paid and the money is set aside again. Payments can be filed under a bill straight from the Inbox.
 - **Nothing lands in Flex by accident.** Payments Spency or Claude can't place go to your default envelope (Small stuff unless you choose another in Settings); Flex is yours to pick.
 - **Cash** withdrawals are transfers, not spending. Cash purchases still count toward envelopes.

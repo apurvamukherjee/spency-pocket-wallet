@@ -5,6 +5,11 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 ## [Unreleased]
 
 ### Added
+- Yearly bills are saved for month by month: each sets aside its shortfall spread over the months until it's due, so the month it falls due isn't a shock. Bills shows progress ("9,000 of 24,000 saved") and takes what's already put aside; savings carry into the next month and aren't counted as spending money. Needs the `bill_funds` migration.
+- Money in: log a refund (back into the envelope it came from), income to spend (joins Flex) or income to save (lifts month-end above target). Claude files credits from known merchants as refunds.
+- Overdrafts: a negative bank balance or target in onboarding, Settings, Reconcile and Claude's `update_plan` and `reconcile`.
+- When heading below target, Home and `get_summary` say how to get back: spend about X a day less until month end, or, if that can't work this month, carry it into next month.
+- Tagline: "End every month on the number you chose."
 - Pick the day when adding or editing a payment (Today, Yesterday or any earlier date).
 - File a payment under a bill from the Inbox, quick add or edit sheet; it counts as paying that bill this month. Claude does the same when the merchant or its suggestion matches a bill.
 - Settings → Sorting: choose where unsorted payments go (default Small stuff). Payments are no longer filed under Flex unless you pick it; Claude's Flex suggestions are ignored. Needs the `default_envelope_id` migration.
@@ -21,6 +26,8 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 - One webfont instead of two.
 
 ### Fixed
+- Switching between currencies with different decimal places (INR and JPY) multiplied every amount by 100. It's now blocked while you have data.
+- Claude's `update_plan` and `reconcile` rejected a balance of exactly zero.
 - Saving the plan in Settings re-baselined on the balance from when the page opened, dropping any payment confirmed in the meantime. Balances now follow live figures and only an edited balance re-baselines.
 - Starting a new month moved carried-over weekly and yearly bills onto a day this month. They keep their dates unless you change the day.
 - Onboarding silently dropped half-filled bills and envelopes, and a salary with no pay day. Each is now pointed out before you continue.
