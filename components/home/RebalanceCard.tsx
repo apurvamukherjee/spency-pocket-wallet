@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { useActions, useAppData, useData, useFormat, useToday } from "@/lib/data/context";
 import { weekStartOf } from "@/lib/engine/dates";
 import { unitOf } from "@/lib/engine/money";
@@ -10,10 +10,34 @@ import { Icon } from "@/components/ui/Icon";
 
 const DISMISSED_KEY = "spency-dismissed-rebalance";
 
-function readDismissed(): string[] {
+// Dismissals live in this browser. Read through an external store so the server render (which can't see them)
+// shows nothing rather than a card that might vanish on hydration. Kept in memory too when storage is blocked.
+const listeners = new Set<() => void>();
+let fallback = "[]";
+const subscribe = (l: () => void) => {
+  listeners.add(l);
+  return () => void listeners.delete(l);
+};
+function readRaw(): string {
   try {
-    const raw: unknown = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "[]");
-    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
+    return localStorage.getItem(DISMISSED_KEY) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+function writeRaw(raw: string) {
+  fallback = raw;
+  try {
+    localStorage.setItem(DISMISSED_KEY, raw);
+  } catch (e) {
+    console.warn("Could not remember dismissal", e);
+  }
+  listeners.forEach((l) => l());
+}
+function parseDismissed(raw: string): string[] {
+  try {
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
   } catch (e) {
     console.warn("Could not read dismissed suggestions", e);
     return [];
@@ -28,7 +52,8 @@ export function RebalanceCard() {
   const notify = useUI((s) => s.notify);
   const fmt = useFormat();
   const today = useToday();
-  const [dismissed, setDismissed] = useState(readDismissed);
+  const raw = useSyncExternalStore(subscribe, readRaw, () => null);
+  const dismissed = useMemo(() => (raw === null ? null : parseDismissed(raw)), [raw]);
 
   const r = useMemo(
     () => suggestRebalance({ envelopes, txns, today, weekStart: plan.weekStart, timeZone: profile.timeZone, unit: unitOf(profile.currency) }),
@@ -36,7 +61,7 @@ export function RebalanceCard() {
   );
   // Keyed by week, so a dismissed pattern can come back if it keeps happening.
   const key = r && `${r.from.id}>${r.to.id}@${weekStartOf(today, plan.weekStart)}`;
-  if (!r || !key || dismissed.includes(key)) return null;
+  if (!r || !key || !dismissed || dismissed.includes(key)) return null;
 
   const perWeek = fmt.money(r.amount);
 
@@ -48,13 +73,7 @@ export function RebalanceCard() {
   }
 
   function dismiss() {
-    const next = [...dismissed, key as string].slice(-20);
-    setDismissed(next);
-    try {
-      localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
-    } catch (e) {
-      console.warn("Could not remember dismissal", e);
-    }
+    writeRaw(JSON.stringify([...(dismissed ?? []), key as string].slice(-20)));
   }
 
   return (
