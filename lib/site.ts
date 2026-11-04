@@ -4,4 +4,6 @@ export const SITE_URL =
   (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000");
 
 export const SITE_NAME = "Spency";
-export const SITE_DESCRIPTION = "A calm spending tracker that keeps you on course for the month-end balance you planned, kept up to date by Claude.";
+/** The promise every feature serves: end every month on the number you chose. */
+export const SITE_TAGLINE = "End every month on the number you chose.";
+export const SITE_DESCRIPTION = `${SITE_TAGLINE} One number each day tells you what's safe to spend; Claude keeps it up to date from your payment screenshots.`;

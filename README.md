@@ -1,6 +1,6 @@
 # Spency
 
-A budgeting app for people paid monthly that shows what's safe to spend today and lets Claude log payments from your screenshots.
+**End every month on the number you chose.** A budgeting app for people paid monthly that shows what's safe to spend today and lets Claude log payments from your screenshots.
 
 ```bash
 git clone https://github.com/apurvamukherjee/spency-pocket-wallet.git && cd spency-pocket-wallet && npm install && npm run dev
