@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { billFundsAtEnd, billStatus, summarize, type SpencyData, walletBalances } from "./derive";
+import { billFundsAtEnd, billStatus, catchUp, summarize, type SpencyData, walletBalances } from "./derive";
 import { major as rupees } from "./money";
 import type { Envelope, Txn } from "./types";
 
@@ -316,5 +316,26 @@ describe("yearly bills are saved for monthly", () => {
     const feb = { ...base().plan, month: "2027-02", balanceAt: "2027-02-01T00:00:00+05:30" };
     // Feb → Mar is two months.
     expect(summarize(base({ plan: feb, commitments: [insurance] }), "2027-02-02").billSavings).toBe(rupees(6000));
+  });
+});
+
+describe("catchUp", () => {
+  it("is null when on track", () => {
+    expect(catchUp(summarize(base(), "2026-11-10"), 100)).toBeNull();
+  });
+
+  it("spreads the gap over the days left, rounded up to a whole unit", () => {
+    // 2,000 over on flex on the 10th: 21 days left.
+    const s = summarize(base({ txns: [txn("2026-11-10", 2000)] }), "2026-11-10");
+    const c = catchUp({ ...s, projected: s.target - rupees(1000) }, 100);
+    expect(c).toEqual({ kind: "per_day", gap: rupees(1000), perDay: rupees(48) });
+  });
+
+  it("says when the gap can't close this month", () => {
+    expect(catchUp({ target: rupees(70000), projected: rupees(60000), budgetLeft: rupees(4000), daysLeftMonth: 5 }, 100)).toEqual({
+      kind: "next_month",
+      gap: rupees(10000),
+      shortBy: rupees(6000),
+    });
   });
 });

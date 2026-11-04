@@ -51,6 +51,10 @@ export type Summary = {
   envelopeLeftThisWeek: Minor;
   daysLeftThisWeek: number;
   safeToday: Minor;
+  /** Money the plan still expects to be spent this month: envelopes this week and after, plus unused flex. */
+  budgetLeft: Minor;
+  /** Days from today to month end, inclusive. */
+  daysLeftMonth: number;
   projected: Minor;
   bonusSaved: Minor;
   status: SettlementStatus;
@@ -154,6 +158,20 @@ export function billFundsAtEnd(plan: MonthPlan, cs: Commitment[], txns: Txn[]): 
     if (left > 0) out[c.id] = left;
   }
   return out;
+}
+
+export type CatchUp =
+  /** Spending this much less per day than planned, until month end, lands exactly on target. */
+  | { kind: "per_day"; gap: Minor; perDay: Minor }
+  /** The gap is bigger than everything still planned for spending; it can't close this month. */
+  | { kind: "next_month"; gap: Minor; shortBy: Minor };
+
+/** The concrete way back when the projection is below target, or null when on track. */
+export function catchUp(s: Pick<Summary, "target" | "projected" | "budgetLeft" | "daysLeftMonth">, unit: number): CatchUp | null {
+  const gap = s.target - s.projected;
+  if (gap <= 0) return null;
+  if (gap > s.budgetLeft) return { kind: "next_month", gap, shortBy: gap - s.budgetLeft };
+  return { kind: "per_day", gap, perDay: Math.ceil(gap / Math.max(1, s.daysLeftMonth) / unit) * unit };
 }
 
 /** End-of-day bank + cash from plan start to `today`, for the month chart. */
@@ -263,6 +281,8 @@ export function summarize(data: SpencyData, today: ISODate): Summary {
     envelopeLeftThisWeek,
     daysLeftThisWeek,
     safeToday,
+    budgetLeft: envelopeLeftThisWeek + futureWeeks + Math.max(0, flexLeft),
+    daysLeftMonth,
     projected,
     bonusSaved,
     status: current.settlement.status,
