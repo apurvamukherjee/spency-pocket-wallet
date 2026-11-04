@@ -15,13 +15,15 @@ export function QuickAdd() {
   const open = useUI((s) => s.quickAdd);
   const close = useUI((s) => s.closeQuickAdd);
   return (
-    <Sheet open={open} onClose={close} title="Add spend">
+    <Sheet open={open} onClose={close} title="Add a payment">
       <QuickAddForm onDone={close} />
     </Sheet>
   );
 }
 
-type Kind = "spend" | "withdraw";
+type Kind = "spend" | "in" | "withdraw";
+/** Refund: back into the envelope (or Flex) it came from. Income: extra money, spent this month or saved. */
+type InKind = "refund" | "spend" | "save";
 
 function QuickAddForm({ onDone }: { onDone: () => void }) {
   const { envelopes, commitments, memory, profile } = useAppData();
@@ -35,6 +37,7 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
   const [wallet, setWallet] = useState<Wallet>("bank");
   const [picked, setPicked] = useState<Category | null>(null);
   const [day, setDay] = useState(today);
+  const [inKind, setInKind] = useState<InKind>("refund");
   const instant = instantFor(day, today, profile.timeZone);
 
   const amount = fmt.parse(amountText);
@@ -48,11 +51,21 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
     e.preventDefault();
     if (!amount) return;
     const occurredAt = instantFor(day, today, profile.timeZone);
-    addTxn(
-      kind === "withdraw"
-        ? { amount, wallet: "bank", kind: "transfer", merchant: "Cash withdrawal", envelopeId: null, occurredAt }
-        : { amount, wallet, merchant: merchant.trim() || "Quick spend", ...category, occurredAt },
-    );
+    const name = merchant.trim();
+    if (kind === "withdraw") {
+      addTxn({ amount, wallet: "bank", kind: "transfer", merchant: "Cash withdrawal", envelopeId: null, occurredAt });
+    } else if (kind === "spend") {
+      addTxn({ amount, wallet, merchant: name || "Quick spend", ...category, occurredAt });
+    } else if (inKind === "refund") {
+      // A refund is negative spending: it goes back where the spend was counted.
+      addTxn({ amount, wallet, direction: "credit", merchant: name || "Refund", envelopeId: category.envelopeId, commitmentId: null, occurredAt });
+    } else if (inKind === "spend") {
+      // Extra money to use this month joins Flex, so safe-to-spend rises and the target stays put.
+      addTxn({ amount, wallet, direction: "credit", merchant: name || "Extra income", envelopeId: null, commitmentId: null, occurredAt });
+    } else {
+      // Saved income isn't spending money; it lifts the month-end balance above the target.
+      addTxn({ amount, wallet, direction: "credit", kind: "income", merchant: name || "Extra income", envelopeId: null, occurredAt });
+    }
     onDone();
   }
 
@@ -64,7 +77,8 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
         onChange={setKind}
         options={[
           { value: "spend", label: "Spend" },
-          { value: "withdraw", label: "Cash withdrawal" },
+          { value: "in", label: "Money in" },
+          { value: "withdraw", label: "Withdraw cash" },
         ]}
       />
 
@@ -89,6 +103,41 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
           <CategoryPicker envelopes={envelopes} bills={commitments} value={category} onChange={setPicked} />
           <Segmented<Wallet>
             label="Paid from"
+            value={wallet}
+            onChange={setWallet}
+            options={[
+              { value: "bank", label: "Bank / card" },
+              { value: "cash", label: "Cash" },
+            ]}
+          />
+        </>
+      ) : kind === "in" ? (
+        <>
+          <input className="field" placeholder="From? (optional)" value={merchant} onChange={(e) => setMerchant(e.target.value)} />
+          <Segmented<InKind>
+            label="What is it"
+            value={inKind}
+            onChange={setInKind}
+            options={[
+              { value: "refund", label: "Refund" },
+              { value: "spend", label: "Income to spend" },
+              { value: "save", label: "Income to save" },
+            ]}
+          />
+          {inKind === "refund" ? (
+            <div className="space-y-2">
+              <p className="text-xs text-muted">Goes back to</p>
+              <CategoryPicker envelopes={envelopes} bills={[]} value={category} onChange={setPicked} />
+            </div>
+          ) : (
+            <p className="text-sm text-muted">
+              {inKind === "spend"
+                ? "Adds to Flex, so you can spend it this month. Your month-end target stays the same."
+                : "Kept out of your spending money, so you end the month above your target."}
+            </p>
+          )}
+          <Segmented<Wallet>
+            label="Received into"
             value={wallet}
             onChange={setWallet}
             options={[
