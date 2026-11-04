@@ -107,6 +107,12 @@ function cloudActions(
       const i = list.findIndex((x) => x.id === e.id);
       run((d) => r.saveEnvelope(d, e), () => sb().from("envelopes").upsert(rows.envelopeToRow(e, i === -1 ? list.length : i)));
     },
+    saveAccounts: (accounts) =>
+      run(
+        (d) => r.saveAccounts(d, accounts),
+        () => sb().from("accounts").upsert(accounts.map(rows.accountToRow)),
+      ),
+    deleteAccount: (id) => run((d) => r.deleteAccount(d, id), () => sb().from("accounts").delete().eq("id", id)),
     deleteEnvelope: (id) => run((d) => r.deleteEnvelope(d, id), () => sb().from("envelopes").delete().eq("id", id)),
     saveCommitment: (c) => run((d) => r.saveCommitment(d, c), () => sb().from("commitments").upsert(rows.commitmentToRow(c))),
     deleteCommitment: (id) => run((d) => r.deleteCommitment(d, id), () => sb().from("commitments").delete().eq("id", id)),
@@ -120,7 +126,7 @@ function cloudActions(
     async resetAll() {
       writes.start();
       try {
-        for (const table of ["transactions", "merchant_memory", "reconcile_checks", "month_plans", "envelopes", "commitments"] as const) {
+        for (const table of ["transactions", "merchant_memory", "reconcile_checks", "month_plans", "envelopes", "commitments", "accounts"] as const) {
           ok(await sb().from(table).delete().eq("user_id", user.id));
         }
       } finally {

@@ -1,6 +1,6 @@
 import { defaultEnvelopeId, recallEnvelope, rememberMerchant } from "@/lib/engine/inbox";
 import type { ReconcileCheck } from "@/lib/engine/reconcile";
-import type { Commitment, Envelope, Txn } from "@/lib/engine/types";
+import type { Account, Commitment, Envelope, Txn } from "@/lib/engine/types";
 import type { AppData, NewTxn, PlanInput, ProfilePatch, TxnPatch } from "./types";
 
 // Pure transitions shared by demo mode (applied to the local store) and cloud mode (applied optimistically).
@@ -48,6 +48,19 @@ export function setStatus(d: AppData, ids: string[], status: Txn["status"]): App
 export const setPlan = (d: AppData, patch: Partial<PlanInput>): AppData =>
   d.plan ? { ...d, plan: { ...d.plan, ...patch } } : d;
 
+export const saveAccounts = (d: AppData, accounts: Account[]): AppData => ({ ...d, accounts });
+
+/** Mirrors the database: payments fall back to the main account, and the opening balance moves with them. */
+export function deleteAccount(d: AppData, id: string): AppData {
+  const clear = (v: string | null | undefined) => (v === id ? null : v);
+  return {
+    ...d,
+    accounts: d.accounts.filter((a) => a.id !== id),
+    plan: d.plan && { ...d.plan, openingAccounts: Object.fromEntries(Object.entries(d.plan.openingAccounts ?? {}).filter(([a]) => a !== id)) },
+    txns: d.txns.map((t) => (t.accountId === id || t.toAccountId === id ? { ...t, accountId: clear(t.accountId), toAccountId: clear(t.toAccountId) } : t)),
+  };
+}
+
 export const saveEnvelope = (d: AppData, e: Envelope): AppData => ({ ...d, envelopes: upsert(d.envelopes, e) });
 
 /** Past spends and merchant mappings fall back to flex rather than vanishing; mirrors the database's set-null keys. */
@@ -94,6 +107,7 @@ export function startMonth(d: AppData, plan: PlanInput, planId: string, envelope
 export const resetAll = (d: AppData): AppData => ({
   ...d,
   plan: null,
+  accounts: [],
   envelopes: [],
   commitments: [],
   txns: [],

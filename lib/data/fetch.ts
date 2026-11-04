@@ -49,6 +49,7 @@ export function fromSnapshot(s: Snapshot, user: User): AppData {
   return {
     profile: rows.profileFromRow(s.profile, user.email),
     plan: s.plan && rows.planFromRow(s.plan),
+    accounts: (s.accounts ?? []).map(rows.accountFromRow),
     envelopes: s.envelopes.map(rows.envelopeFromRow),
     commitments: s.commitments.map(rows.commitmentFromRow),
     txns: s.transactions.map(rows.txnFromRow),
@@ -59,9 +60,11 @@ export function fromSnapshot(s: Snapshot, user: User): AppData {
 
 // The pre-app_snapshot path: six queries, then transactions once the plan is known.
 async function fetchAppDataSlow(sb: Supabase, user: User): Promise<AppData> {
-  const [profile, plan, envelopes, commitments, memory, checks] = await Promise.all([
+  const [profile, plan, accounts, envelopes, commitments, memory, checks] = await Promise.all([
     sb.from("profiles").select("*").eq("id", user.id).single().then(must),
     sb.from("month_plans").select("*").order("month", { ascending: false }).limit(1).maybeSingle().then(maybe),
+    // Before the accounts migration the table doesn't exist; carry on with one unnamed account.
+    sb.from("accounts").select("*").order("position").order("created_at").then((r) => (r.error ? [] : (r.data ?? []))),
     sb.from("envelopes").select("*").order("position").order("created_at").then(must),
     sb.from("commitments").select("*").order("created_at").then(must),
     sb.from("merchant_memory").select("*").then(must),
@@ -74,7 +77,7 @@ async function fetchAppDataSlow(sb: Supabase, user: User): Promise<AppData> {
     await sb.from("transactions").select("*").or(`status.eq.pending,occurred_at.gte."${since}"`).order("occurred_at"),
   );
   return fromSnapshot(
-    { profile, plan, envelopes, commitments, transactions, merchant_memory: memory, reconcile_checks: checks },
+    { profile, plan, accounts, envelopes, commitments, transactions, merchant_memory: memory, reconcile_checks: checks },
     user,
   );
 }
