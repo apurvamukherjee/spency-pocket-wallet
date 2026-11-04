@@ -78,7 +78,7 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
         options={[
           { value: "spend", label: "Spend" },
           { value: "in", label: "Money in" },
-          { value: "withdraw", label: "Withdraw cash" },
+          { value: "withdraw", label: "Withdraw" },
         ]}
       />
 
@@ -120,8 +120,8 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
             onChange={setInKind}
             options={[
               { value: "refund", label: "Refund" },
-              { value: "spend", label: "Income to spend" },
-              { value: "save", label: "Income to save" },
+              { value: "spend", label: "To spend" },
+              { value: "save", label: "To save" },
             ]}
           />
           {inKind === "refund" ? (
@@ -132,8 +132,8 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
           ) : (
             <p className="text-sm text-muted">
               {inKind === "spend"
-                ? "Adds to Flex, so you can spend it this month. Your month-end target stays the same."
-                : "Kept out of your spending money, so you end the month above your target."}
+                ? "Extra income. Adds to Flex, so you can spend it this month. Your month-end target stays the same."
+                : "Extra income. Kept out of your spending money, so you end the month above your target."}
             </p>
           )}
           <Segmented<Wallet>

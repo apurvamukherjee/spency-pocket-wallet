@@ -85,6 +85,8 @@ export function CommitmentsView() {
             const paid = status.state === "paid" || status.state === "assumed_paid";
             return (
               <li key={c.id} className="flex items-center gap-3">
+                {/* Not due this month: nothing to tick, but keep the row aligned with the others. */}
+                {status.state === "none" && <span aria-hidden className="size-6 shrink-0" />}
                 {status.state !== "none" && (
                   <button
                     type="button"
