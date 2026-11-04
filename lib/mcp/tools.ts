@@ -125,7 +125,12 @@ export function registerTools(server: McpServer) {
               occurred_at: z.string().optional().describe("ISO 8601 date-time with offset, e.g. 2026-11-03T13:02:00+05:30. Defaults to now."),
               reference: z.string().max(64).optional().describe("UPI ref, UTR, or transaction ID if visible"),
               wallet: z.enum(["bank", "cash"]).optional().describe("Default bank (UPI, card and bank transfers are all bank)"),
-              direction: z.enum(["debit", "credit"]).optional().describe("debit = money out (default), credit = money in"),
+              direction: z
+                .enum(["debit", "credit"])
+                .optional()
+                .describe(
+                  "debit = money out (default), credit = money in. For a refund, set suggested_category to the envelope the original spend was in, and it goes back there; other credits count as income.",
+                ),
               suggested_category: z.string().max(60).optional().describe("Closest envelope or bill name from get_summary; leave out if nothing fits"),
               note: z.string().max(500).optional(),
             }),

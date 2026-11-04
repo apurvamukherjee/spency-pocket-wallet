@@ -97,9 +97,23 @@ describe("planImport", () => {
     expect(() => planImport(data, [{ amount: 1, merchant: "  " }], 100, "2026-11-03T00:00:00Z", id)).toThrow(ToolInputError);
   });
 
-  it("treats credits as income outside envelopes", () => {
-    const plan = planImport(data, [{ amount: 500, merchant: "Refund", direction: "credit", suggested_category: "Groceries" }], 100, "2026-11-03T00:00:00Z", id);
-    expect(plan.add[0].txn).toMatchObject({ direction: "credit", kind: "income", envelopeId: null });
+  it("puts a refund back into the envelope it came from", () => {
+    const plan = planImport(data, [{ amount: 500, merchant: "Zepto", direction: "credit", suggested_category: "Groceries" }], 100, "2026-11-03T00:00:00Z", id);
+    expect(plan.add[0].txn).toMatchObject({ direction: "credit", kind: "expense", envelopeId: "g", commitmentId: null });
+  });
+
+  it("treats other credits as income toward the target, never as a bill or the default envelope", () => {
+    const plan = planImport(
+      data,
+      [
+        { amount: 500, merchant: "Acme Payroll", direction: "credit" },
+        { amount: 649, merchant: "Netflix", direction: "credit" },
+      ],
+      100,
+      "2026-11-03T00:00:00Z",
+      id,
+    );
+    for (const { txn } of plan.add) expect(txn).toMatchObject({ direction: "credit", kind: "income", envelopeId: null, commitmentId: null });
   });
 });
 

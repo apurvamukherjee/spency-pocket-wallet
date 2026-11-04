@@ -124,19 +124,23 @@ export function planImport(
       continue;
     }
     const credit = input.direction === "credit";
-    const category = resolveCategory(d.envelopes, d.memory, merchant, input.suggested_category, {
+    const found = resolveCategory(d.envelopes, d.memory, merchant, input.suggested_category, {
       bills: d.commitments,
       fallback: d.defaultEnvelopeId,
     });
+    // Money in from a merchant Spency knows (or one Claude filed under an envelope) is a refund: it goes back
+    // into that envelope. Anything else, a salary or a friend paying back, is income and goes toward the target.
+    const refund = credit && (found.via === "memory" || found.via === "suggestion");
+    const category = credit && !refund ? { envelopeId: null, commitmentId: null, via: found.via } : found;
     const txn: Txn = {
       id: newId(),
       wallet: input.wallet ?? "bank",
       amount,
       direction: credit ? "credit" : "debit",
-      kind: credit ? "income" : "expense",
+      kind: credit && !refund ? "income" : "expense",
       merchant,
-      envelopeId: credit ? null : category.envelopeId,
-      commitmentId: credit ? null : category.commitmentId,
+      envelopeId: category.envelopeId,
+      commitmentId: refund ? null : category.commitmentId,
       occurredAt: when.toISOString(),
       source: "claude",
       status: "pending",
