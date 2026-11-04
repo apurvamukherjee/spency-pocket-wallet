@@ -242,7 +242,7 @@ export function OnboardingView() {
           />
           <MoneyField label="What would you like to end the month with?" symbol={fmt.symbol} value={target} onChange={setTarget} />
           <div className="grid grid-cols-[1fr_6rem] gap-3">
-            <MoneyField label="Pay still coming before month end (optional)" symbol={fmt.symbol} value={salary} onChange={setSalary} />
+            <MoneyField label="Pay still to come (optional)" symbol={fmt.symbol} value={salary} onChange={setSalary} />
             <label className="space-y-1.5">
               <span className="label">Pay day</span>
               <input
