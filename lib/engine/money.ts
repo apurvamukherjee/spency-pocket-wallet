@@ -73,8 +73,21 @@ export function parseMoney(input: string, f: MoneyFormat): Minor | null {
   return Number(parts[0]) * unit + Number(frac.padEnd(digits, "0") || "0");
 }
 
+/**
+ * Like parseMoney, but a leading minus ("-" or "−") makes it negative. For balances that can be overdrawn and
+ * targets that pay an overdraft down; never for payment amounts, which are always positive.
+ */
+export function parseSignedMoney(input: string, f: MoneyFormat): Minor | null {
+  const t = input.trim();
+  const negative = /^[-\u2212]/.test(t);
+  const v = parseMoney(negative ? t.slice(1) : t, f);
+  return v === null || !negative || v === 0 ? v : -v;
+}
+
 /** Minor units → plain editable text in the locale's notation, without grouping ("1500.5" / "1500,5"). */
 export function toInputText(minor: Minor, f: MoneyFormat): string {
+  // Format the size and put the sign in front: % on a negative number would split "-1500.50" into "-1500.-50".
+  if (minor < 0) return `-${toInputText(-minor, f)}`;
   const unit = unitOf(f.currency);
   const digits = Math.log10(unit);
   return new Intl.NumberFormat(f.locale, { useGrouping: false, maximumFractionDigits: digits }).format(
