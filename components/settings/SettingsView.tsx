@@ -176,50 +176,70 @@ function Sorting() {
   );
 }
 
+const WEEK_STARTS = [
+  { value: "1", label: "Monday" },
+  { value: "0", label: "Sunday" },
+  { value: "6", label: "Saturday" },
+] as const;
+type WeekStartValue = (typeof WEEK_STARTS)[number]["value"];
+
 function PlanForm() {
   const { plan } = useAppData();
   const s = useSummary();
   const fmt = useFormat();
   const { setPlan } = useActions();
 
-  const [bank, setBank] = useState(fmt.input(s.bank));
-  const [cash, setCash] = useState(fmt.input(s.cash));
+  // Balances keep following the live numbers until the user types in them. Saving untouched balances would
+  // re-baseline on a stale figure and silently drop anything confirmed since the page opened.
+  const [bankText, setBank] = useState<string | null>(null);
+  const [cashText, setCash] = useState<string | null>(null);
+  const bank = bankText ?? fmt.input(s.bank);
+  const cash = cashText ?? fmt.input(s.cash);
   const [target, setTarget] = useState(fmt.input(s.target));
   const [salary, setSalary] = useState(plan?.salary ? fmt.input(plan.salary.amount) : "");
   // Just the day of the month; the year and month always come from the plan.
   const [salaryDay, setSalaryDay] = useState(plan?.salary ? String(+plan.salary.date.slice(8)) : "");
-  const [weekStart, setWeekStart] = useState(String(plan?.weekStart ?? 1) as "0" | "1");
+  const [weekStart, setWeekStart] = useState<WeekStartValue>(
+    WEEK_STARTS.find((w) => w.value === String(plan?.weekStart ?? 1))?.value ?? "1",
+  );
   const [saved, setSaved] = useState(false);
+  const edit =
+    <T,>(set: (v: T) => void) =>
+    (v: T) => {
+      set(v);
+      setSaved(false);
+    };
 
   const p = { bank: fmt.parse(bank), cash: fmt.parse(cash || "0"), target: fmt.parse(target), salary: fmt.parse(salary) };
   const day = Number(salaryDay);
   const dayOk = Number.isInteger(day) && day >= 1 && day <= 31;
   const valid = p.bank !== null && p.cash !== null && p.target !== null && (!salary || (p.salary !== null && dayOk));
+  const rebase = bankText !== null || cashText !== null;
 
   function save(e: React.FormEvent) {
     e.preventDefault();
     if (!valid || p.bank === null || p.cash === null || p.target === null) return;
-    // Re-baselining: balances are true as of now, so earlier transactions are already inside them.
     setPlan({
-      openingBank: p.bank,
-      openingCash: p.cash,
-      balanceAt: new Date().toISOString(),
+      // Re-baselining only when a balance was edited: they're true as of now, so earlier payments are inside them.
+      ...(rebase ? { openingBank: p.bank, openingCash: p.cash, balanceAt: new Date().toISOString() } : {}),
       target: p.target,
       salary: p.salary && dayOk && plan ? { amount: p.salary, date: dayInMonth(plan.month, day) } : null,
       weekStart: Number(weekStart),
     });
+    setBank(null);
+    setCash(null);
     setSaved(true);
   }
 
   return (
     <Section title="This month's plan" hint={`Spendable this month: ${fmt.money(s.spendable)}`}>
-      <form onSubmit={save} onChange={() => setSaved(false)} className="space-y-5">
+      <form onSubmit={save} className="space-y-5">
         <div className="grid grid-cols-2 gap-4">
-          <Money label="Bank balance now" symbol={fmt.symbol} value={bank} onChange={setBank} />
-          <Money label="Cash in hand" symbol={fmt.symbol} value={cash} onChange={setCash} />
-          <Money label="Month-end target" symbol={fmt.symbol} value={target} onChange={setTarget} />
+          <Money label="Bank balance now" symbol={fmt.symbol} value={bank} onChange={edit(setBank)} />
+          <Money label="Cash in hand" symbol={fmt.symbol} value={cash} onChange={edit(setCash)} />
+          <Money label="Month-end target" symbol={fmt.symbol} value={target} onChange={edit(setTarget)} />
           <div />
-          <Money label="Salary (optional)" symbol={fmt.symbol} value={salary} onChange={setSalary} />
+          <Money label="Salary (optional)" symbol={fmt.symbol} value={salary} onChange={edit(setSalary)} />
           <label className="space-y-1.5">
             <span className="label">Pay day</span>
             <input
@@ -229,26 +249,23 @@ function PlanForm() {
               maxLength={2}
               aria-describedby="payday-hint"
               value={salaryDay}
-              onChange={(e) => setSalaryDay(e.target.value.replace(/\D/g, ""))}
+              onChange={(e) => edit(setSalaryDay)(e.target.value.replace(/\D/g, ""))}
             />
             <span id="payday-hint" className="block text-xs text-faint">
               Day of the month. If it&apos;s already passed, Spency treats this month&apos;s pay as received.
             </span>
           </label>
         </div>
+        {salary && !dayOk && <p className="text-sm text-warn">Add the day your pay arrives so Spency can count it.</p>}
         <div className="space-y-2">
           <span className="label">Weeks start on</span>
-          <Segmented
-            label="Week start"
-            value={weekStart}
-            onChange={setWeekStart}
-            options={[
-              { value: "1", label: "Monday" },
-              { value: "0", label: "Sunday" },
-            ]}
-          />
+          <Segmented<WeekStartValue> label="Week start" value={weekStart} onChange={edit(setWeekStart)} options={[...WEEK_STARTS]} />
         </div>
-        <p className="text-sm text-muted">Saving makes these balances your new starting point, as of right now.</p>
+        <p className="text-sm text-muted">
+          {rebase
+            ? "Saving makes these balances your new starting point, as of right now."
+            : "Balances follow your payments. Type a new one only if your bank shows something different."}
+        </p>
         <button type="submit" disabled={!valid} className="btn btn-primary w-full">
           {saved ? "Saved" : "Save plan"}
         </button>
