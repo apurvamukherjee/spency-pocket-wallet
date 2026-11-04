@@ -161,6 +161,7 @@ export function CloudProvider({ user, children, fallback }: { user: User; childr
       return fetchAppData(sb(), user);
     },
   });
+  useLiveUpdates(user.id, key, writes);
 
   const actions = useMemo(
     () =>
@@ -208,3 +209,34 @@ export function CloudProvider({ user, children, fallback }: { user: User; childr
   return <SpencyContext value={value}>{children}</SpencyContext>;
 }
 
+const LIVE_TABLES = ["transactions", "envelopes", "commitments", "month_plans"] as const;
+/** Changes arriving this soon after one of this tab's own saves are taken to be its echo. */
+const ECHO_MS = 3000;
+
+/**
+ * Payments Claude adds (and anything changed in another tab) show up without a refresh: Supabase Realtime announces
+ * the change, row level security limits it to this user's rows, and the month reloads in one request. Echoes of this
+ * tab's own saves are skipped. Needs the realtime migration; without it the channel just stays quiet.
+ */
+function useLiveUpdates(userId: string, key: readonly unknown[], writes: Writes) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    const sb = supabaseBrowser();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const reload = () => {
+      if (writes.busy || Date.now() - writes.lastEnded < ECHO_MS) return;
+      clearTimeout(timer);
+      // Claude often adds several payments at once; reload once for the batch.
+      timer = setTimeout(() => void qc.invalidateQueries({ queryKey: key }), 400);
+    };
+    let channel = sb.channel(`spency:${userId}`);
+    for (const table of LIVE_TABLES) {
+      channel = channel.on("postgres_changes", { event: "*", schema: "public", table, filter: `user_id=eq.${userId}` }, reload);
+    }
+    channel.subscribe();
+    return () => {
+      clearTimeout(timer);
+      void sb.removeChannel(channel);
+    };
+  }, [userId, key, writes, qc]);
+}
