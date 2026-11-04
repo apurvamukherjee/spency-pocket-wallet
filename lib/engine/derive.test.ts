@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { billStatus, summarize, type SpencyData, walletBalances } from "./derive";
+import { billFundsAtEnd, billStatus, summarize, type SpencyData, walletBalances } from "./derive";
 import { major as rupees } from "./money";
 import type { Envelope, Txn } from "./types";
 
@@ -265,5 +265,56 @@ describe("bill status and manual overrides", () => {
   it("a yearly bill not due this month has no status", () => {
     const yearly = { ...phone, id: "y", frequency: "yearly" as const, nextDebit: "2027-03-10" };
     expect(billStatus(plan, yearly, []).state).toBe("none");
+  });
+});
+
+describe("yearly bills are saved for monthly", () => {
+  const insurance = { id: "ins", name: "Insurance", amount: rupees(12000), frequency: "yearly" as const, nextDebit: "2027-03-10" };
+
+  it("spreads the bill over the months left and still lands on target", () => {
+    const data = base({ commitments: [insurance] });
+    for (const day of ["2026-11-01", "2026-11-15", "2026-11-30"]) {
+      const s = summarize(data, day);
+      expect(s.projected).toBe(rupees(70000));
+      // Nov → Mar is five months: 12,000 / 5.
+      expect(s.billSavings).toBe(rupees(2400));
+      expect(s.commitmentsRemaining).toBe(0);
+    }
+    expect(billFundsAtEnd(data.plan, data.commitments, [])).toEqual({ ins: rupees(2400) });
+  });
+
+  it("counts what's already saved as not spendable", () => {
+    const fresh = summarize(base({ commitments: [insurance] }), "2026-11-02");
+    const saved = summarize(base({ commitments: [insurance], plan: { ...base().plan, openingBank: rupees(87000), billFunds: { ins: rupees(7000) } } }), "2026-11-02");
+    // The bank holds 7,000 more, all of it for the bill, and the monthly share falls to (12,000 − 7,000) / 5.
+    expect(saved.spendable).toBe(fresh.spendable);
+    expect(saved.billSavings).toBe(rupees(7000 + 1000));
+    expect(saved.projected).toBe(rupees(70000));
+  });
+
+  it("in the month it's due, pays from the savings and resets", () => {
+    const march = {
+      ...base().plan,
+      month: "2027-03",
+      openingBank: rupees(90000),
+      balanceAt: "2027-03-01T00:00:00+05:30",
+      billFunds: { ins: rupees(9600) },
+    };
+    const unpaid = summarize(base({ plan: march, commitments: [insurance] }), "2027-03-05");
+    expect(unpaid.commitmentsRemaining).toBe(rupees(12000));
+    expect(unpaid.billSavings).toBe(0);
+    expect(unpaid.projected).toBe(rupees(70000));
+
+    const paid = [txn("2027-03-10", 12000, { commitmentId: "ins", merchant: "Insurance" })];
+    const after = summarize(base({ plan: march, commitments: [insurance], txns: paid }), "2027-03-12");
+    expect(after.commitmentsRemaining).toBe(0);
+    expect(after.projected).toBe(rupees(70000));
+    expect(billFundsAtEnd(march, [insurance], paid)).toEqual({});
+  });
+
+  it("catches up when started late: everything missing is due in the bill's own month", () => {
+    const feb = { ...base().plan, month: "2027-02", balanceAt: "2027-02-01T00:00:00+05:30" };
+    // Feb → Mar is two months.
+    expect(summarize(base({ plan: feb, commitments: [insurance] }), "2027-02-02").billSavings).toBe(rupees(6000));
   });
 });

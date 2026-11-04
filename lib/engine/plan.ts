@@ -1,4 +1,4 @@
-import { addDays, addMonths, monthEnd, monthStart, overlapDays, toLocalDate, weekStartOf } from "./dates";
+import { addDays, addMonths, monthEnd, monthOf, monthStart, overlapDays, toLocalDate, weekStartOf } from "./dates";
 import { unitOf } from "./money";
 import type { Commitment, Envelope, ISODate, MonthPlan, Minor } from "./types";
 
@@ -13,9 +13,17 @@ export function salaryInPlan(plan: MonthPlan): Minor {
   return plan.salary.date >= start && plan.salary.date <= end ? plan.salary.amount : 0;
 }
 
-/** Spendable = current balance − target (+ expected salary in the month). Cash on hand is spendable too. */
+/** Money already put aside for yearly bills when the plan started. */
+export function fundsAtStart(plan: MonthPlan): Minor {
+  return Object.values(plan.billFunds ?? {}).reduce((s, v) => s + v, 0);
+}
+
+/**
+ * Spendable = current balance − target − yearly-bill savings already held (+ expected salary in the month).
+ * Cash on hand is spendable too.
+ */
 export function spendable(plan: MonthPlan): Minor {
-  return plan.openingBank + plan.openingCash - plan.target + salaryInPlan(plan);
+  return plan.openingBank + plan.openingCash - plan.target - fundsAtStart(plan) + salaryInPlan(plan);
 }
 
 export function commitmentDates(c: Commitment, from: ISODate, to: ISODate): ISODate[] {
@@ -57,9 +65,48 @@ export function billFrom(plan: MonthPlan, c: Commitment): ISODate {
   return plan.unpaidBills?.includes(c.id) ? monthStart(plan.month) : planWindow(plan).start;
 }
 
+/** Yearly bills are saved for monthly, so the month they fall due isn't hit with the whole amount. */
+export const saveMonthly = (c: Commitment) => c.frequency === "yearly";
+
+const monthIndex = (m: string) => +m.slice(0, 4) * 12 + +m.slice(5, 7);
+
+export type BillFund = {
+  /** Put aside before this plan started. */
+  saved: Minor;
+  /** Put aside this month; in the month it's due, whatever is still missing. */
+  contribution: Minor;
+  /** The next time it goes out, on or after the plan start. */
+  dueDate: ISODate;
+  dueThisMonth: boolean;
+  /** The bill's amount for that payment. */
+  goal: Minor;
+};
+
+/**
+ * What a yearly bill sets aside this month: the shortfall spread evenly over the months left until it's due,
+ * rounded up to a whole unit. Catching up is automatic: a late start or a skipped month raises the share.
+ */
+export function billFund(plan: MonthPlan, c: Commitment): BillFund {
+  const { end } = planWindow(plan);
+  const unit = unitOf(plan.currency);
+  const from = billFrom(plan, c);
+  const dueNow = commitmentDates(c, from, end);
+  const dueDate = dueNow[0] ?? commitmentDates(c, from, addDays(end, 400))[0] ?? c.nextDebit;
+  const saved = plan.billFunds?.[c.id] ?? 0;
+  const goal = c.amount * Math.max(1, dueNow.length);
+  const missing = Math.max(0, goal - saved);
+  const months = Math.max(1, monthIndex(monthOf(dueDate)) - monthIndex(plan.month) + 1);
+  const contribution = dueNow.length ? missing : Math.min(missing, Math.ceil(missing / months / unit) * unit);
+  return { saved, contribution, dueDate, dueThisMonth: dueNow.length > 0, goal };
+}
+
+/** Money this month's plan sets aside for bills: what's due, plus this month's share of yearly bills. */
 export function commitmentsInPlan(plan: MonthPlan, cs: Commitment[]): Minor {
   const { end } = planWindow(plan);
-  return cs.reduce((sum, c) => sum + c.amount * commitmentDates(c, billFrom(plan, c), end).length, 0);
+  return cs.reduce(
+    (sum, c) => sum + (saveMonthly(c) ? billFund(plan, c).contribution : c.amount * commitmentDates(c, billFrom(plan, c), end).length),
+    0,
+  );
 }
 
 /** weekly_limit / 7 × days of that week inside [from, to], rounded to a whole major unit so budgets read cleanly. */

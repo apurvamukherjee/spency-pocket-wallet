@@ -73,4 +73,9 @@ export type MonthPlan = {
    * By default such a payment is assumed to be inside the starting balance.
    */
   unpaidBills?: string[];
+  /**
+   * Yearly bills are saved for month by month. Per bill id: what was already put aside for it when this plan
+   * started. That money is inside the opening balance but isn't spendable.
+   */
+  billFunds?: Record<string, Minor>;
 };

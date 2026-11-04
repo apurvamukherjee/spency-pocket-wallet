@@ -2,11 +2,13 @@ import { addDays, diffDays, monthStart, toLocalDate } from "./dates";
 import { floorToUnit, unitOf } from "./money";
 import {
   billFrom,
+  billFund,
   commitmentDates,
   commitmentsInPlan,
   flexBudget,
   planWindow,
   salaryInPlan,
+  saveMonthly,
   spendable,
   weekAllocation,
   weeksCovering,
@@ -37,6 +39,8 @@ export type Summary = {
   spendable: Minor;
   commitmentsTotal: Minor;
   commitmentsRemaining: Minor;
+  /** Held for yearly bills that aren't due this month; still in the bank at month end, but not spendable. */
+  billSavings: Minor;
   salaryPending: Minor;
   flexBudget: Minor;
   /** May go negative when unplanned spends exceed the pool. */
@@ -124,6 +128,34 @@ export function commitmentsRemaining(plan: MonthPlan, cs: Commitment[], txns: Tx
   return cs.reduce((sum, c) => sum + billStatus(plan, c, txns).due, 0);
 }
 
+/** Savings for yearly bills not due this month, as they'll stand at month end. */
+export function billSavingsHeld(plan: MonthPlan, cs: Commitment[]): Minor {
+  return cs.reduce((sum, c) => {
+    if (!saveMonthly(c)) return sum;
+    const f = billFund(plan, c);
+    return f.dueThisMonth ? sum : sum + f.saved + f.contribution;
+  }, 0);
+}
+
+/**
+ * Each yearly bill's savings at the end of this plan's month: what was saved, plus this month's share, less what
+ * was paid. The next month's plan starts from these. Derived from the plan and confirmed payments only.
+ */
+export function billFundsAtEnd(plan: MonthPlan, cs: Commitment[], txns: Txn[]): Record<string, Minor> {
+  const { start, end } = planWindow(plan);
+  const out: Record<string, Minor> = {};
+  for (const c of cs) {
+    if (!saveMonthly(c)) continue;
+    const f = billFund(plan, c);
+    const paid = txns
+      .filter((t) => confirmedAfter(plan, t) && t.commitmentId === c.id && inRange(plan, t, start, end))
+      .reduce((s, t) => s - signed(t), 0);
+    const left = f.saved + f.contribution - paid;
+    if (left > 0) out[c.id] = left;
+  }
+  return out;
+}
+
 /** End-of-day bank + cash from plan start to `today`, for the month chart. */
 export function balanceSeries(plan: MonthPlan, txns: Txn[], today: ISODate): { date: ISODate; balance: Minor }[] {
   const win = planWindow(plan);
@@ -203,8 +235,10 @@ export function summarize(data: SpencyData, today: ISODate): Summary {
   const salaryReceived = txns.some((t) => confirmedAfter(plan, t) && t.kind === "salary");
   const salaryPending = salaryReceived ? 0 : salaryInPlan(plan);
   const reserved = commitmentsRemaining(plan, commitments, txns);
+  const billSavings = billSavingsHeld(plan, commitments);
+  // Yearly-bill savings stay in the bank but aren't the user's to spend, so they don't count toward the target.
   const projected =
-    bank + cash + salaryPending - reserved - envelopeLeftThisWeek - futureWeeks - Math.max(0, flexLeft);
+    bank + cash + salaryPending - reserved - billSavings - envelopeLeftThisWeek - futureWeeks - Math.max(0, flexLeft);
 
   const weekLastDay = current.end > win.end ? win.end : current.end;
   const daysLeftThisWeek = diffDays(day, weekLastDay) + 1;
@@ -220,6 +254,7 @@ export function summarize(data: SpencyData, today: ISODate): Summary {
     spendable: spendable(plan),
     commitmentsTotal: commitmentsInPlan(plan, commitments),
     commitmentsRemaining: reserved,
+    billSavings,
     salaryPending,
     flexBudget: flexTotal,
     flexLeft,
