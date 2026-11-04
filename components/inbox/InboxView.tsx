@@ -95,7 +95,10 @@ function TxnCard({ txn, duplicateOf, envelopes, today }: { txn: Txn; duplicateOf
           <p className="truncate text-[15px] font-medium">{txn.merchant}</p>
           <p className="mt-0.5 text-[13px] text-muted">{fmt.when(txn.occurredAt, today)}</p>
         </div>
-        <p className="text-[17px] font-medium tabular-nums">{fmt.money(txn.amount)}</p>
+        <p className={`shrink-0 text-[17px] font-medium tabular-nums ${txn.direction === "credit" ? "text-ok" : ""}`}>
+          {txn.direction === "credit" ? fmt.money(txn.amount, { signed: true }) : fmt.money(txn.amount)}
+          {txn.direction === "credit" && <span className="sr-only"> received</span>}
+        </p>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <span className="rounded-full bg-raised px-2.5 py-1 text-muted">{categoryLabel(envelopes, commitments, txn)}</span>

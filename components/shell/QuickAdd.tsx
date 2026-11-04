@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { useActions, useAppData, useFormat } from "@/lib/data/context";
+import { useActions, useAppData, useFormat, useToday } from "@/lib/data/context";
 import type { Category } from "@/lib/data/category";
 import { defaultEnvelopeId, recallEnvelope } from "@/lib/engine/inbox";
 import type { Wallet } from "@/lib/engine/types";
 import { useUI } from "@/lib/ui";
 import { CategoryPicker } from "@/components/inbox/CategoryPicker";
+import { instantFor, WhenField } from "@/components/inbox/WhenField";
 import { Segmented } from "@/components/ui/controls";
 import { Sheet } from "@/components/ui/Sheet";
 
@@ -26,12 +27,15 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
   const { envelopes, commitments, memory, profile } = useAppData();
   const { addTxn } = useActions();
   const fmt = useFormat();
+  const today = useToday();
 
   const [kind, setKind] = useState<Kind>("spend");
   const [amountText, setAmountText] = useState("");
   const [merchant, setMerchant] = useState("");
   const [wallet, setWallet] = useState<Wallet>("bank");
   const [picked, setPicked] = useState<Category | null>(null);
+  const [day, setDay] = useState(today);
+  const instant = instantFor(day, today, profile.timeZone);
 
   const amount = fmt.parse(amountText);
   const remembered = recallEnvelope(memory, merchant);
@@ -43,10 +47,11 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
   function save(e: React.FormEvent) {
     e.preventDefault();
     if (!amount) return;
+    const occurredAt = instantFor(day, today, profile.timeZone);
     addTxn(
       kind === "withdraw"
-        ? { amount, wallet: "bank", kind: "transfer", merchant: "Cash withdrawal", envelopeId: null, occurredAt: new Date().toISOString() }
-        : { amount, wallet, merchant: merchant.trim() || "Quick spend", ...category, occurredAt: new Date().toISOString() },
+        ? { amount, wallet: "bank", kind: "transfer", merchant: "Cash withdrawal", envelopeId: null, occurredAt }
+        : { amount, wallet, merchant: merchant.trim() || "Quick spend", ...category, occurredAt },
     );
     onDone();
   }
@@ -95,6 +100,8 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
       ) : (
         <p className="text-sm text-muted">Moves money from your bank to cash. It isn&apos;t spending, so your budget stays the same.</p>
       )}
+
+      <WhenField value={day} onChange={setDay} instant={instant} />
 
       <button type="submit" disabled={!amount} className="btn btn-primary w-full py-3">
         {amount ? `Add ${fmt.money(amount)}` : "Add"}
