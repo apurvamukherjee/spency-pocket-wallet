@@ -1,5 +1,5 @@
 import { addDays, toLocalDate } from "./engine/dates";
-import { type FormatMoney, type MoneyFormat, moneyFormatter, parseMoney, toInputText } from "./engine/money";
+import { type FormatMoney, type MoneyFormat, moneyFormatter, parseMoney, parseSignedMoney, toInputText } from "./engine/money";
 import type { ISODate, Minor } from "./engine/types";
 
 export type Formatters = {
@@ -8,6 +8,8 @@ export type Formatters = {
   symbol: string;
   money: FormatMoney;
   parse: (input: string) => Minor | null;
+  /** Allows a leading minus, for balances and targets that can be below zero. */
+  parseSigned: (input: string) => Minor | null;
   input: (minor: Minor) => string;
   time: (instant: string) => string;
   day: (d: ISODate) => string;
@@ -42,6 +44,7 @@ export function makeFormatters(p: { currency: string; locale: string; timeZone: 
     symbol,
     money: moneyFormatter(moneyFormat),
     parse: (s) => parseMoney(s, moneyFormat),
+    parseSigned: (s) => parseSignedMoney(s, moneyFormat),
     input: (m) => toInputText(m, moneyFormat),
     time: (i) => time.format(new Date(i)),
     day: (d) => day.format(asDate(d)),

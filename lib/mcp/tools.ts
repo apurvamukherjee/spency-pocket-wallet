@@ -4,8 +4,9 @@ import { fetchAppData, ok } from "@/lib/data/fetch";
 import { enginePlan } from "@/lib/data/plan";
 import * as rows from "@/lib/data/rows";
 import type { AppData, PlanInput } from "@/lib/data/types";
-import { addDays, dayInMonth, monthOf, toLocalDate, todayIn } from "@/lib/engine/dates";
-import { billStatus, summarize } from "@/lib/engine/derive";
+import { addDays, dayInPeriod, toLocalDate, todayIn } from "@/lib/engine/dates";
+import { isCurrentPlan, planPeriod } from "@/lib/engine/plan";
+import { accountBalances, billStatus, summarize } from "@/lib/engine/derive";
 import { defaultEnvelopeId, normalizeMerchant } from "@/lib/engine/inbox";
 import { categoryLabel } from "@/lib/data/category";
 import { moneyFormatter, unitOf } from "@/lib/engine/money";
@@ -13,23 +14,38 @@ import { reconcileGap } from "@/lib/engine/reconcile";
 import type { Commitment, Envelope, Txn } from "@/lib/engine/types";
 import type { Supabase } from "@/lib/supabase/client";
 import { supabaseAs } from "@/lib/supabase/token";
-import { beforePlanNote, categoryByName, findEnvelope, planImport, summaryPayload, ToolInputError, toMinor, txnPayload } from "./logic";
+import {
+  beforePlanNote,
+  categoryByName,
+  findAccount,
+  findEnvelope,
+  planImport,
+  summaryPayload,
+  ToolInputError,
+  toMinor,
+  toSignedMinor,
+  txnPayload,
+} from "./logic";
 
 export const INSTRUCTIONS = `Spency is the user's personal spending tracker. It helps them end each month on a balance they chose.
 
 Logging payments from screenshots (UPI, card, bank or wallet apps):
 1. Call get_summary first to learn the user's currency, envelope names and today's date.
-2. For every payment in the screenshots extract: merchant (who was paid, cleaned up, e.g. "Swiggy" not "SWIGGY*BANGALORE"), amount, the date-time with time zone offset, the reference number (UPI ref / UTR / transaction ID) if visible, and whether money went out (debit) or came in (credit).
-3. Call add_transactions once with all of them. Set suggested_category to the closest envelope or bill name from get_summary (a bill payment like rent or Netflix should use the bill's name). If nothing fits, leave suggested_category out: Spency files it under the user's default envelope (usually Small stuff). Never choose Flex yourself; the user marks Flex when they want it.
+2. For every payment in the screenshots extract: merchant (who was paid, cleaned up, e.g. "Swiggy" not "SWIGGY*BANGALORE"), amount, the date-time with time zone offset, the reference number (UPI ref / UTR / transaction ID) if visible, and whether money went out (debit) or came in (credit). If get_summary lists several bank_accounts, also note which account the screenshot's bank app shows, and pass it as account.
+3. Call add_transactions once with all of them. Set suggested_category to the closest envelope or bill name from get_summary (a bill payment like rent or Netflix should use the bill's name). If nothing fits, leave suggested_category out: Spency files it under the user's default envelope (usually Small stuff). Never choose Flex yourself; the user marks Flex when they want it. A credit that's a refund should carry the original spend's envelope as suggested_category so it goes back there; salary and other income need no category.
 4. Everything you add is pending. Tell the user to confirm it in Spency's Inbox; nothing changes their balances until they do.
 
 Past days and corrections: payments from earlier days go through add_transactions with their real date. To fix something already in Spency (wrong amount, category, date, or a payment that shouldn't be there), call list_transactions to find its id, then update_transaction or remove_transaction. Bills, envelopes and the month plan can be changed with update_commitment, remove_commitment, update_envelope, remove_envelope and update_plan. When the user says a bill has or hasn't gone out ("Netflix hasn't gone out yet", "rent is paid"), use set_bill_paid. Say what you're about to change and get a yes before removing anything or changing balances. Only the user can confirm pending payments, in the app.
 
-Questions like "can I afford a 1,500 dinner?": call get_summary and compare with safe_to_spend_today (today's comfortable amount) and flex_left (room for unplanned spends). Be honest and kind; never guilt the user.
+Questions like "can I afford a 1,500 dinner?": call get_summary and compare with safe_to_spend_today (today's comfortable amount) and flex_left (room for unplanned spends). Be honest and kind; never guilt the user. If they're heading below target, pass on to_get_back_on_track. Money in set_aside_for_yearly_bills isn't spendable.
 
 Amounts are in the user's currency in normal units (249.50), never in cents or paise.`;
 
 const amount = z.union([z.number().positive(), z.string().min(1)]).describe("Amount in the user's currency, normal units, e.g. 249 or \"249.50\"");
+/** Balances and targets can be zero or negative (an overdrawn account). */
+const balance = z
+  .union([z.number(), z.string().min(1)])
+  .describe("Amount in the user's currency, normal units; may be zero or negative, e.g. -2000");
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 
 type Ctx = { http?: { authInfo?: AuthInfo } };
@@ -70,10 +86,23 @@ const fallbackEnvelope = (s: Session) => defaultEnvelopeId(s.data.envelopes, s.d
 
 function needsPlan(s: Session) {
   const { plan, profile } = s.data;
-  if (!plan || plan.month !== monthOf(s.today)) {
+  if (!plan || !isCurrentPlan(plan, s.today)) {
     throw new ToolInputError("The user hasn't set up this month's plan yet. Ask them to open Spency once to set their balance and target.");
   }
   return summarize({ ...s.data, plan: enginePlan(plan, profile) }, s.today);
+}
+
+/** Per-account balances for get_summary, only when the user has more than one account. */
+function accountsPayload(s: Session) {
+  const { plan, profile, accounts, txns } = s.data;
+  if (!plan || accounts.length < 2) return {};
+  return {
+    bank_accounts: accountBalances(enginePlan(plan, profile), accounts, txns).map((a, i) => ({
+      name: a.name,
+      balance: s.money(a.balance),
+      ...(i === 0 ? { main: true } : {}),
+    })),
+  };
 }
 
 const withNote = (note: string | undefined) => (note ? { note_for_user: note } : {});
@@ -106,7 +135,8 @@ export function registerTools(server: McpServer) {
     },
     guard(async (_args: Record<string, never>, s) => ({
       currency: s.data.profile.currency,
-      ...summaryPayload(needsPlan(s), s.data, s.money),
+      ...summaryPayload(needsPlan(s), s.data, s.money, s.unit),
+      ...accountsPayload(s),
     })),
   );
 
@@ -125,7 +155,17 @@ export function registerTools(server: McpServer) {
               occurred_at: z.string().optional().describe("ISO 8601 date-time with offset, e.g. 2026-11-03T13:02:00+05:30. Defaults to now."),
               reference: z.string().max(64).optional().describe("UPI ref, UTR, or transaction ID if visible"),
               wallet: z.enum(["bank", "cash"]).optional().describe("Default bank (UPI, card and bank transfers are all bank)"),
-              direction: z.enum(["debit", "credit"]).optional().describe("debit = money out (default), credit = money in"),
+              account: z
+                .string()
+                .max(60)
+                .optional()
+                .describe("Bank account name, when get_summary lists several accounts (e.g. from the bank app in the screenshot). Leave out for the main account."),
+              direction: z
+                .enum(["debit", "credit"])
+                .optional()
+                .describe(
+                  "debit = money out (default), credit = money in. For a refund, set suggested_category to the envelope the original spend was in, and it goes back there; other credits count as income.",
+                ),
               suggested_category: z.string().max(60).optional().describe("Closest envelope or bill name from get_summary; leave out if nothing fits"),
               note: z.string().max(500).optional(),
             }),
@@ -145,7 +185,7 @@ export function registerTools(server: McpServer) {
       }
       return {
         added: plan.add.map(({ txn, via }) => ({
-          ...txnPayload(txn, s.data.envelopes, s.data.commitments, s.money),
+          ...txnPayload(txn, s.data.envelopes, s.data.commitments, s.money, s.data.accounts),
           ...withNote(beforePlanNote(txn.occurredAt, s.data.plan?.balanceAt ?? null)),
           category_from: {
             memory: "the user's merchant memory",
@@ -157,7 +197,7 @@ export function registerTools(server: McpServer) {
         skipped_as_duplicates: plan.skipped.map(({ input, duplicateOf }) => ({
           merchant: input.merchant,
           amount: input.amount,
-          matches: txnPayload(duplicateOf, s.data.envelopes, s.data.commitments, s.money),
+          matches: txnPayload(duplicateOf, s.data.envelopes, s.data.commitments, s.money, s.data.accounts),
         })),
         next_step: plan.add.length ? "Tell the user these are waiting in Spency's Inbox to confirm." : "Nothing new to add.",
       };
@@ -196,7 +236,7 @@ export function registerTools(server: McpServer) {
         })
         .filter((t) => !wanted || categoryLabel(s.data.envelopes, s.data.commitments, t).toLowerCase() === wanted)
         .slice(0, args.limit ?? 50);
-      return { count: list.length, transactions: list.map((t) => txnPayload(t, s.data.envelopes, s.data.commitments, s.money)) };
+      return { count: list.length, transactions: list.map((t) => txnPayload(t, s.data.envelopes, s.data.commitments, s.money, s.data.accounts)) };
     }),
   );
 
@@ -294,7 +334,7 @@ export function registerTools(server: McpServer) {
           createdAt: now,
         };
         ok(await s.sb.from("transactions").insert(rows.txnToRow(t)));
-        return { added: txnPayload(t, s.data.envelopes, s.data.commitments, s.money), next_step: "Waiting in the Inbox to confirm." };
+        return { added: txnPayload(t, s.data.envelopes, s.data.commitments, s.money, s.data.accounts), next_step: "Waiting in the Inbox to confirm." };
       }
       const plan = planImport(
         { ...s.data, defaultEnvelopeId: fallbackEnvelope(s) },
@@ -306,7 +346,7 @@ export function registerTools(server: McpServer) {
       if (!plan.add.length) return { skipped_as_duplicate: true };
       const t = plan.add[0].txn;
       ok(await s.sb.from("transactions").insert(rows.txnToRow(t)));
-      return { added: txnPayload(t, s.data.envelopes, s.data.commitments, s.money), next_step: "Waiting in the Inbox to confirm." };
+      return { added: txnPayload(t, s.data.envelopes, s.data.commitments, s.money, s.data.accounts), next_step: "Waiting in the Inbox to confirm." };
     }),
   );
 
@@ -322,6 +362,7 @@ export function registerTools(server: McpServer) {
         merchant: z.string().min(1).max(120).optional(),
         category: z.string().max(60).optional().describe("Envelope or bill name; Flex only if the user asks"),
         wallet: z.enum(["bank", "cash"]).optional(),
+        account: z.string().max(60).optional().describe("Bank account name, when the user has several"),
         occurred_at: z.string().optional().describe("ISO 8601 with offset"),
         direction: z.enum(["debit", "credit"]).optional(),
         note: z.string().max(500).optional().describe("Empty string clears the note"),
@@ -336,6 +377,7 @@ export function registerTools(server: McpServer) {
           merchant?: string;
           category?: string;
           wallet?: Txn["wallet"];
+          account?: string;
           occurred_at?: string;
           direction?: Txn["direction"];
           note?: string;
@@ -353,6 +395,7 @@ export function registerTools(server: McpServer) {
           ...(args.merchant !== undefined ? { merchant: args.merchant.trim() } : {}),
           ...(args.category !== undefined ? categoryByName(s.data.envelopes, s.data.commitments, args.category) : {}),
           ...(args.wallet !== undefined ? { wallet: args.wallet } : {}),
+          ...(args.account !== undefined ? { accountId: findAccount(s.data.accounts, args.account) } : {}),
           ...(when ? { occurredAt: when.toISOString() } : {}),
           ...(args.direction !== undefined ? { direction: args.direction } : {}),
           ...(args.note !== undefined ? { note: args.note.trim() || null } : {}),
@@ -368,8 +411,8 @@ export function registerTools(server: McpServer) {
         }
         const after: Txn = { ...before, ...patch };
         return {
-          before: txnPayload(before, s.data.envelopes, s.data.commitments, s.money),
-          after: txnPayload(after, s.data.envelopes, s.data.commitments, s.money),
+          before: txnPayload(before, s.data.envelopes, s.data.commitments, s.money, s.data.accounts),
+          after: txnPayload(after, s.data.envelopes, s.data.commitments, s.money, s.data.accounts),
           effect: after.status === "confirmed" ? "Balances and envelopes are updated." : "Still waiting in the Inbox for the user to confirm.",
           ...withNote(beforePlanNote(after.occurredAt, s.data.plan?.balanceAt ?? null)),
         };
@@ -390,7 +433,7 @@ export function registerTools(server: McpServer) {
       const res = await s.sb.from("transactions").update({ status: "rejected" }).eq("id", id).select("*").maybeSingle();
       ok(res);
       if (!res.data) throw new ToolInputError("No payment with that id. Call list_transactions to find it.");
-      return { removed: txnPayload(rows.txnFromRow(res.data), s.data.envelopes, s.data.commitments, s.money), effect: "No longer counts toward any balance." };
+      return { removed: txnPayload(rows.txnFromRow(res.data), s.data.envelopes, s.data.commitments, s.money, s.data.accounts), effect: "No longer counts toward any balance." };
     }),
   );
 
@@ -460,12 +503,12 @@ export function registerTools(server: McpServer) {
       description:
         "Change the month-end target, expected pay (amount and pay day of the month), week start, or reset the starting bank and cash balances to what the user has right now (that becomes the new starting point, as in Settings). Confirm with the user first.",
       inputSchema: z.object({
-        target: amount.optional().describe("Balance the user wants at month end"),
+        target: balance.optional().describe("Balance the user wants at month end; negative to pay an overdraft down, e.g. \"-5000\""),
         salary_amount: amount.optional(),
         pay_day: z.number().int().min(1).max(31).optional().describe("Day of the month pay arrives"),
         remove_salary: z.boolean().optional(),
-        week_start: z.enum(["monday", "sunday"]).optional(),
-        bank_balance: amount.optional().describe("Real bank balance right now"),
+        week_start: z.enum(["monday", "sunday", "saturday"]).optional(),
+        bank_balance: balance.optional().describe("Real bank balance right now; negative if overdrawn"),
         cash_in_hand: z.union([z.number().min(0), z.string()]).optional().describe("Cash right now; 0 if none"),
       }),
     },
@@ -476,7 +519,7 @@ export function registerTools(server: McpServer) {
           salary_amount?: number | string;
           pay_day?: number;
           remove_salary?: boolean;
-          week_start?: "monday" | "sunday";
+          week_start?: "monday" | "sunday" | "saturday";
           bank_balance?: number | string;
           cash_in_hand?: number | string;
         },
@@ -486,17 +529,18 @@ export function registerTools(server: McpServer) {
         const plan = s.data.plan;
         if (!plan) throw new ToolInputError("No plan for this month yet.");
         const patch: Partial<PlanInput> = {};
-        if (args.target !== undefined) patch.target = toMinor(args.target, s.unit);
-        if (args.week_start) patch.weekStart = args.week_start === "monday" ? 1 : 0;
+        if (args.target !== undefined) patch.target = toSignedMinor(args.target, s.unit);
+        if (args.week_start) patch.weekStart = { monday: 1, sunday: 0, saturday: 6 }[args.week_start];
         if (args.remove_salary) patch.salary = null;
         else if (args.salary_amount !== undefined || args.pay_day !== undefined) {
           const salary = args.salary_amount !== undefined ? toMinor(args.salary_amount, s.unit) : plan.salary?.amount;
           const day = args.pay_day ?? (plan.salary ? +plan.salary.date.slice(8) : undefined);
           if (salary === undefined || day === undefined) throw new ToolInputError("Give both salary_amount and pay_day the first time.");
-          patch.salary = { amount: salary, date: dayInMonth(plan.month, day) };
+          // The pay day's date inside this plan's month, which may run payday to payday.
+          patch.salary = { amount: salary, date: dayInPeriod(planPeriod(plan), day) };
         }
         if (args.bank_balance !== undefined || args.cash_in_hand !== undefined) {
-          patch.openingBank = args.bank_balance !== undefined ? toMinor(args.bank_balance, s.unit) : now.bank;
+          patch.openingBank = args.bank_balance !== undefined ? toSignedMinor(args.bank_balance, s.unit) : now.bank;
           patch.openingCash =
             args.cash_in_hand === undefined ? now.cash : Number(args.cash_in_hand) === 0 ? 0 : toMinor(args.cash_in_hand, s.unit);
           patch.balanceAt = new Date().toISOString();
@@ -578,7 +622,7 @@ export function registerTools(server: McpServer) {
       return {
         bill: c.name,
         status: "Payment waiting in the Inbox",
-        payment: txnPayload(t, s.data.envelopes, s.data.commitments, s.money),
+        payment: txnPayload(t, s.data.envelopes, s.data.commitments, s.money, s.data.accounts),
         next_step: "Tell the user to confirm it in Spency; the bill shows paid once they do.",
       };
     }),
@@ -590,11 +634,11 @@ export function registerTools(server: McpServer) {
       title: "Check the bank balance",
       description:
         "Compare the user's real bank balance with Spency's. Returns the difference so you can help find a missing payment. Does not change anything unless the balances match (then it records today's check).",
-      inputSchema: z.object({ actual_bank_balance: amount.describe("What the user's bank app shows right now") }),
+      inputSchema: z.object({ actual_bank_balance: balance.describe("What the user's bank app shows right now; negative if overdrawn") }),
     },
     guard(async ({ actual_bank_balance }: { actual_bank_balance: number | string }, s) => {
       const summary = needsPlan(s);
-      const actual = toMinor(actual_bank_balance, s.unit);
+      const actual = toSignedMinor(actual_bank_balance, s.unit);
       const gap = reconcileGap(summary.bank, actual);
       if (gap === 0) {
         ok(await s.sb.from("reconcile_checks").upsert(rows.checkToRow({ date: s.today, computed: summary.bank, actual, resolution: "matched" }), { onConflict: "user_id,date" }));

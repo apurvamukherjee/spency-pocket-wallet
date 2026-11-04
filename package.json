@@ -35,7 +35,7 @@
     "vitest": "^5.1.0"
   },
   "license": "MIT",
-  "description": "A budgeting app for people paid monthly that shows what's safe to spend today and lets Claude log payments from your screenshots.",
+  "description": "End every month on the number you chose. A budgeting app for people paid monthly that shows what's safe to spend today and lets Claude log payments from your screenshots.",
   "repository": {
     "type": "git",
     "url": "https://github.com/apurvamukherjee/spency-pocket-wallet.git"

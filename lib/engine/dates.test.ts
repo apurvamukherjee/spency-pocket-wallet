@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  dayInPeriod,
+  periodContaining,
+  periodOfKey,
+  middayIn,
   addDays,
   addMonths,
   dayInMonth,
@@ -56,4 +60,34 @@ describe("dates", () => {
     expect(addMonths("2026-02-28", 1, 31)).toBe("2026-03-31");
     expect(addMonths("2026-01-15", -1)).toBe("2025-12-15");
   });
+
+  it("middayIn lands on the same calendar day in any zone", () => {
+    for (const tz of ["Asia/Kolkata", "Pacific/Kiritimati", "Pacific/Pago_Pago", "America/New_York", "UTC"]) {
+      expect(toLocalDate(middayIn("2026-03-08", tz), tz)).toBe("2026-03-08");
+    }
+    expect(middayIn("2026-11-04", "Asia/Kolkata")).toBe("2026-11-04T06:30:00.000Z");
+  });
+
+  it("periodContaining covers calendar months and payday months", () => {
+    expect(periodContaining("2026-11-04")).toEqual({ start: "2026-11-01", end: "2026-11-30", key: "2026-11" });
+    expect(periodContaining("2026-11-04", 25)).toEqual({ start: "2026-10-25", end: "2026-11-24", key: "2026-11" });
+    expect(periodContaining("2026-11-25", 25)).toEqual({ start: "2026-11-25", end: "2026-12-24", key: "2026-12" });
+    // Short months clamp: the 31st becomes the 28th in February.
+    expect(periodContaining("2027-02-15", 31)).toEqual({ start: "2027-01-31", end: "2027-02-27", key: "2027-02" });
+    expect(periodContaining("2027-03-01", 31)).toEqual({ start: "2027-02-28", end: "2027-03-30", key: "2027-03" });
+  });
+
+  it("periodOfKey inverts periodContaining", () => {
+    for (const [d, day] of [["2026-11-04", 1], ["2026-11-04", 25], ["2026-12-31", 2], ["2027-02-15", 31], ["2027-03-01", 31]] as const) {
+      const p = periodContaining(d, day);
+      expect(periodOfKey(p.key, day)).toEqual(p);
+    }
+  });
+
+  it("dayInPeriod finds a pay day on either side of the month change", () => {
+    const p = periodContaining("2026-11-04", 25);
+    expect(dayInPeriod(p, 25)).toBe("2026-10-25");
+    expect(dayInPeriod(p, 5)).toBe("2026-11-05");
+  });
 });
+

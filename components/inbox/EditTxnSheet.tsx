@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { useActions, useAppData, useFormat } from "@/lib/data/context";
-import type { Txn, Wallet } from "@/lib/engine/types";
+import { useActions, useAppData, useFormat, useProfile, useToday } from "@/lib/data/context";
+import { toLocalDate } from "@/lib/engine/dates";
+import type { Txn } from "@/lib/engine/types";
 import { useUI } from "@/lib/ui";
-import { Segmented } from "@/components/ui/controls";
 import { Sheet } from "@/components/ui/Sheet";
 import type { Category } from "@/lib/data/category";
 import { CategoryPicker } from "./CategoryPicker";
+import { type Source, SourcePicker } from "./SourcePicker";
+import { instantFor, WhenField } from "./WhenField";
 
 export function EditTxnSheet() {
   const id = useUI((s) => s.editing);
@@ -21,20 +23,32 @@ export function EditTxnSheet() {
 }
 
 function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
-  const { envelopes, commitments } = useAppData();
+  const { envelopes, commitments, accounts } = useAppData();
   const { updateTxn, setStatus } = useActions();
   const fmt = useFormat();
+  const today = useToday();
+  const { timeZone } = useProfile();
 
   const [amountText, setAmountText] = useState(fmt.input(txn.amount));
   const [merchant, setMerchant] = useState(txn.merchant);
   const [category, setCategory] = useState<Category>({ envelopeId: txn.envelopeId, commitmentId: txn.commitmentId });
-  const [wallet, setWallet] = useState<Wallet>(txn.wallet);
+  const [source, setSource] = useState<Source>({ wallet: txn.wallet, accountId: txn.accountId ?? null });
+  const [day, setDay] = useState(toLocalDate(txn.occurredAt, timeZone));
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const amount = fmt.parse(amountText);
   const pending = txn.status === "pending";
+  const instant = instantFor(day, today, timeZone, txn.occurredAt);
+  // Withdrawals and adjustments aren't spending: they have no category, and a withdrawal always leaves the bank.
+  const spend = txn.kind === "expense" || txn.kind === "income" || txn.kind === "salary";
 
   function save(status?: Txn["status"]) {
     if (!amount) return;
-    updateTxn(txn.id, { amount, merchant: merchant.trim() || txn.merchant, ...category, wallet });
+    updateTxn(txn.id, {
+      amount,
+      merchant: merchant.trim() || txn.merchant,
+      ...(spend ? { ...category, wallet: source.wallet, accountId: source.wallet === "bank" ? source.accountId : null } : {}),
+      ...(instant !== txn.occurredAt ? { occurredAt: instant } : {}),
+    });
     if (status) setStatus([txn.id], status);
     onDone();
   }
@@ -49,33 +63,43 @@ function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
     >
       <div className="grid grid-cols-[1fr_8rem] gap-3">
         <label className="space-y-1.5">
-          <span className="label">Merchant</span>
+          <span className="label">{txn.direction === "credit" ? "From" : "Merchant"}</span>
           <input className="field" value={merchant} onChange={(e) => setMerchant(e.target.value)} />
         </label>
         <label className="space-y-1.5">
-          <span className="label">Amount</span>
+          <span className="label">{txn.direction === "credit" ? "Amount in" : "Amount"}</span>
           <input className="field tabular-nums" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} />
         </label>
       </div>
-      <div className="space-y-2">
-        <span className="label">Category</span>
-        <CategoryPicker envelopes={envelopes} bills={commitments} value={category} onChange={setCategory} />
-        {category.commitmentId && category.commitmentId !== txn.commitmentId && (
-          <p className="text-xs text-faint">Counts as paying this bill for the month.</p>
-        )}
-        {!category.commitmentId && category.envelopeId !== txn.envelopeId && (
-          <p className="text-xs text-faint">Future payments to {merchant || "this merchant"} will go here too.</p>
-        )}
-      </div>
-      <Segmented<Wallet>
-        label="Paid from"
-        value={wallet}
-        onChange={setWallet}
-        options={[
-          { value: "bank", label: "Bank / card" },
-          { value: "cash", label: "Cash" },
-        ]}
-      />
+      <WhenField value={day} onChange={setDay} instant={instant} />
+      {spend ? (
+        <>
+          <div className="space-y-2">
+            <span className="label">Category</span>
+            <CategoryPicker envelopes={envelopes} bills={commitments} value={category} onChange={setCategory} />
+            {category.commitmentId && category.commitmentId !== txn.commitmentId && (
+              <p className="text-xs text-faint">Counts as paying this bill for the month.</p>
+            )}
+            {!category.commitmentId && category.envelopeId !== txn.envelopeId && merchant.trim() !== "" && (
+              <p className="text-xs text-faint">Future payments to {merchant || "this merchant"} will go here too.</p>
+            )}
+          </div>
+          <SourcePicker
+            accounts={accounts}
+            label={txn.direction === "credit" ? "Received into" : "Paid from"}
+            value={source}
+            onChange={setSource}
+          />
+        </>
+      ) : (
+        <p className="text-sm text-muted">
+          {txn.kind === "transfer"
+            ? txn.toAccountId
+              ? "A move between your own accounts. It isn't spending, so it has no category."
+              : "A cash withdrawal moves money from your bank to cash. It isn't spending, so it has no category."
+            : "An adjustment lines Spency up with your real bank balance. It isn't tied to an envelope or bill."}
+        </p>
+      )}
       {txn.upiRef && <p className="text-xs text-faint">Reference {txn.upiRef}</p>}
       <div className="flex gap-3">
         {pending ? (
@@ -92,12 +116,15 @@ function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
             <button
               type="button"
               onClick={() => {
+                // Two taps: removing changes balances and there's no undo.
+                if (!confirmRemove) return setConfirmRemove(true);
                 setStatus([txn.id], "rejected");
                 onDone();
               }}
-              className="btn btn-ghost text-bad"
+              onBlur={() => setConfirmRemove(false)}
+              className={`btn ${confirmRemove ? "bg-bad text-bg" : "btn-ghost text-bad"}`}
             >
-              Remove
+              {confirmRemove ? "Tap to remove" : "Remove"}
             </button>
             <button type="submit" disabled={!amount} className="btn btn-primary flex-1">
               Save

@@ -8,9 +8,9 @@ export const FLEX: Category = { envelopeId: null, commitmentId: null };
 export function categoryLabel(
   envelopes: Envelope[],
   commitments: Commitment[],
-  t: Pick<Txn, "envelopeId" | "commitmentId"> & Partial<Pick<Txn, "kind">>,
+  t: Pick<Txn, "envelopeId" | "commitmentId"> & Partial<Pick<Txn, "kind" | "toAccountId">>,
 ): string {
-  if (t.kind === "transfer") return "Cash withdrawal";
+  if (t.kind === "transfer") return t.toAccountId ? "Moved between accounts" : "Cash withdrawal";
   if (t.kind === "adjustment") return "Adjustment";
   if (t.commitmentId) return commitments.find((c) => c.id === t.commitmentId)?.name ?? "Bill";
   return t.envelopeId ? (envelopes.find((e) => e.id === t.envelopeId)?.name ?? "Flex") : "Flex";

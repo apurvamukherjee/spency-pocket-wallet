@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { billStatus, summarize, type SpencyData, walletBalances } from "./derive";
+import { accountBalances, billFundsAtEnd, billStatus, catchUp, summarize, type SpencyData, walletBalances } from "./derive";
 import { major as rupees } from "./money";
+import { isCurrentPlan } from "./plan";
 import type { Envelope, Txn } from "./types";
 
 let seq = 0;
@@ -265,5 +266,136 @@ describe("bill status and manual overrides", () => {
   it("a yearly bill not due this month has no status", () => {
     const yearly = { ...phone, id: "y", frequency: "yearly" as const, nextDebit: "2027-03-10" };
     expect(billStatus(plan, yearly, []).state).toBe("none");
+  });
+});
+
+describe("yearly bills are saved for monthly", () => {
+  const insurance = { id: "ins", name: "Insurance", amount: rupees(12000), frequency: "yearly" as const, nextDebit: "2027-03-10" };
+
+  it("spreads the bill over the months left and still lands on target", () => {
+    const data = base({ commitments: [insurance] });
+    for (const day of ["2026-11-01", "2026-11-15", "2026-11-30"]) {
+      const s = summarize(data, day);
+      expect(s.projected).toBe(rupees(70000));
+      // Nov → Mar is five months: 12,000 / 5.
+      expect(s.billSavings).toBe(rupees(2400));
+      expect(s.commitmentsRemaining).toBe(0);
+    }
+    expect(billFundsAtEnd(data.plan, data.commitments, [])).toEqual({ ins: rupees(2400) });
+  });
+
+  it("counts what's already saved as not spendable", () => {
+    const fresh = summarize(base({ commitments: [insurance] }), "2026-11-02");
+    const saved = summarize(base({ commitments: [insurance], plan: { ...base().plan, openingBank: rupees(87000), billFunds: { ins: rupees(7000) } } }), "2026-11-02");
+    // The bank holds 7,000 more, all of it for the bill, and the monthly share falls to (12,000 − 7,000) / 5.
+    expect(saved.spendable).toBe(fresh.spendable);
+    expect(saved.billSavings).toBe(rupees(7000 + 1000));
+    expect(saved.projected).toBe(rupees(70000));
+  });
+
+  it("in the month it's due, pays from the savings and resets", () => {
+    const march = {
+      ...base().plan,
+      month: "2027-03",
+      openingBank: rupees(90000),
+      balanceAt: "2027-03-01T00:00:00+05:30",
+      billFunds: { ins: rupees(9600) },
+    };
+    const unpaid = summarize(base({ plan: march, commitments: [insurance] }), "2027-03-05");
+    expect(unpaid.commitmentsRemaining).toBe(rupees(12000));
+    expect(unpaid.billSavings).toBe(0);
+    expect(unpaid.projected).toBe(rupees(70000));
+
+    const paid = [txn("2027-03-10", 12000, { commitmentId: "ins", merchant: "Insurance" })];
+    const after = summarize(base({ plan: march, commitments: [insurance], txns: paid }), "2027-03-12");
+    expect(after.commitmentsRemaining).toBe(0);
+    expect(after.projected).toBe(rupees(70000));
+    expect(billFundsAtEnd(march, [insurance], paid)).toEqual({});
+  });
+
+  it("catches up when started late: everything missing is due in the bill's own month", () => {
+    const feb = { ...base().plan, month: "2027-02", balanceAt: "2027-02-01T00:00:00+05:30" };
+    // Feb → Mar is two months.
+    expect(summarize(base({ plan: feb, commitments: [insurance] }), "2027-02-02").billSavings).toBe(rupees(6000));
+  });
+});
+
+describe("catchUp", () => {
+  it("is null when on track", () => {
+    expect(catchUp(summarize(base(), "2026-11-10"), 100)).toBeNull();
+  });
+
+  it("spreads the gap over the days left, rounded up to a whole unit", () => {
+    // 2,000 over on flex on the 10th: 21 days left.
+    const s = summarize(base({ txns: [txn("2026-11-10", 2000)] }), "2026-11-10");
+    const c = catchUp({ ...s, projected: s.target - rupees(1000) }, 100);
+    expect(c).toEqual({ kind: "per_day", gap: rupees(1000), perDay: rupees(48) });
+  });
+
+  it("says when the gap can't close this month", () => {
+    expect(catchUp({ target: rupees(70000), projected: rupees(60000), budgetLeft: rupees(4000), daysLeftMonth: 5 }, 100)).toEqual({
+      kind: "next_month",
+      gap: rupees(10000),
+      shortBy: rupees(6000),
+    });
+  });
+});
+
+describe("payday-to-payday months", () => {
+  // Paid on the 25th: the month runs 25 Oct – 24 Nov and is keyed by the month it ends in.
+  const payday = (over: Partial<SpencyData["plan"]> = {}) =>
+    base({ plan: { ...base().plan, month: "2026-11", startDay: 25, balanceAt: "2026-10-25T09:00:00+05:30", ...over } });
+
+  it("covers 25th to 24th and still lands on target", () => {
+    for (const day of ["2026-10-25", "2026-10-31", "2026-11-01", "2026-11-24"]) {
+      expect(summarize(payday(), day).projected).toBe(rupees(70000));
+    }
+    const s = summarize(payday(), "2026-11-10");
+    expect(s.weeks[0].start).toBe("2026-10-19");
+    expect(s.weeks.at(-1)?.start).toBe("2026-11-09");
+  });
+
+  it("counts bills due across both calendar months", () => {
+    // Netflix on the 15th falls on 15 Nov, inside 25 Oct – 24 Nov.
+    expect(summarize(payday(), "2026-10-26").commitmentsRemaining).toBe(rupees(649));
+  });
+
+  it("knows when the month is over", () => {
+    const { plan } = payday();
+    expect(isCurrentPlan(plan, "2026-11-24")).toBe(true);
+    expect(isCurrentPlan(plan, "2026-11-25")).toBe(false);
+    expect(isCurrentPlan(base().plan, "2026-11-30")).toBe(true);
+    expect(isCurrentPlan(base().plan, "2026-12-01")).toBe(false);
+  });
+});
+
+describe("several bank accounts", () => {
+  const accounts = [
+    { id: "main", name: "Main" },
+    { id: "sav", name: "Savings" },
+  ];
+  const plan = { ...base().plan, openingAccounts: { sav: rupees(30000) } };
+
+  it("splits the bank total, with the main account holding the rest", () => {
+    expect(accountBalances(plan, accounts, []).map((a) => a.balance)).toEqual([rupees(50000), rupees(30000)]);
+  });
+
+  it("moves between accounts without changing totals or the budget", () => {
+    const move = txn("2026-11-03", 5000, { kind: "transfer", accountId: "sav", toAccountId: "main" });
+    const spend = txn("2026-11-03", 200, { accountId: "sav" });
+    const unassigned = txn("2026-11-03", 100);
+    const txns = [move, spend, unassigned];
+    expect(accountBalances(plan, accounts, txns).map((a) => a.balance)).toEqual([rupees(54900), rupees(24800)]);
+    expect(walletBalances(plan, txns)).toEqual({ bank: rupees(79700), cash: 0 });
+    const withMove = summarize(base({ plan, txns }), "2026-11-04");
+    const without = summarize(base({ plan, txns: [spend, unassigned] }), "2026-11-04");
+    expect(withMove.projected).toBe(without.projected);
+  });
+
+  it("hands a deleted account's money to the main account", () => {
+    const txns = [txn("2026-11-03", 200, { accountId: "gone" })];
+    const balances = accountBalances(plan, accounts, txns);
+    expect(balances[0].balance + balances[1].balance).toBe(walletBalances(plan, txns).bank);
+    expect(balances[0].balance).toBe(rupees(49800));
   });
 });

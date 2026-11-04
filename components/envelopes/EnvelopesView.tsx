@@ -27,7 +27,8 @@ export function EnvelopesView() {
 
       <section className="space-y-3">
         {envelopes.map((e) => (
-          <EnvelopeEditor key={e.id} envelope={e} />
+          // Keyed on the saved values too, so a change from elsewhere (Claude, a rebalance) refreshes the inputs.
+          <EnvelopeEditor key={`${e.id}:${e.name}:${e.weeklyLimit}`} envelope={e} />
         ))}
         <button
           type="button"
@@ -94,20 +95,24 @@ function EnvelopeEditor({ envelope }: { envelope: Envelope }) {
           className="min-w-0 flex-1 bg-transparent text-[17px] font-medium outline-none"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onBlur={() => (name.trim() ? save({ name: name.trim() }) : setName(envelope.name))}
+          onBlur={() => {
+            const next = name.trim();
+            if (!next) setName(envelope.name);
+            else if (next !== envelope.name) save({ name: next });
+          }}
         />
         <label className="flex items-center gap-1 rounded-xl bg-raised px-3 py-1.5 text-sm focus-within:ring-1 focus-within:ring-accent/60">
           <span className="text-faint">{fmt.symbol}</span>
           <input
             aria-label={`${envelope.name} weekly limit`}
             inputMode="decimal"
-            className="w-16 bg-transparent text-right tabular-nums outline-none"
+            className="w-20 bg-transparent text-right tabular-nums outline-none sm:w-24"
             value={limit}
             onChange={(e) => setLimit(e.target.value)}
             onBlur={() => {
               const p = fmt.parse(limit);
               if (p === null) setLimit(fmt.input(envelope.weeklyLimit));
-              else save({ weeklyLimit: p });
+              else if (p !== envelope.weeklyLimit) save({ weeklyLimit: p });
             }}
           />
           <span className="text-faint">/wk</span>

@@ -5,13 +5,39 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 ## [Unreleased]
 
 ### Added
+- Payday-to-payday months: a month can start on any day (say the 25th, when pay lands) and run to the day before the next. Onboarding asks and shows the dates; Settings shows them. Calendar months are unchanged. Needs the `start_day` migration.
+- Several bank accounts: name them in Settings, pick the account on each payment, move money between them (not spending), enter each balance in onboarding and the plan, and reconcile each against its bank app. Budgets and the target use the total. Claude can file payments under an account and sees each balance. Needs the `accounts` migration.
+- Yearly bills are saved for month by month: each sets aside its shortfall spread over the months until it's due, so the month it falls due isn't a shock. Bills shows progress ("9,000 of 24,000 saved") and takes what's already put aside; savings carry into the next month and aren't counted as spending money. Needs the `bill_funds` migration.
+- Money in: log a refund (back into the envelope it came from), income to spend (joins Flex) or income to save (lifts month-end above target). Claude files credits from known merchants as refunds.
+- Overdrafts: a negative bank balance or target in onboarding, Settings, Reconcile and Claude's `update_plan` and `reconcile`.
+- When heading below target, Home and `get_summary` say how to get back: spend about X a day less until month end, or, if that can't work this month, carry it into next month.
+- Tagline: "End every month on the number you chose."
+- Pick the day when adding or editing a payment (Today, Yesterday or any earlier date).
 - File a payment under a bill from the Inbox, quick add or edit sheet; it counts as paying that bill this month. Claude does the same when the merchant or its suggestion matches a bill.
 - Settings → Sorting: choose where unsorted payments go (default Small stuff). Payments are no longer filed under Flex unless you pick it; Claude's Flex suggestions are ignored. Needs the `default_envelope_id` migration.
 - `set_bill_paid` for Claude: "Netflix hasn't gone out yet" sets the money aside again; "rent is paid" logs a pending payment for you to confirm.
 - Bills: tick a bill to mark it paid this month (logs the payment so balances stay right), untick to undo, or untick a bill Spency assumed was paid to say it hasn't gone out yet (the money is set aside again). Needs the new `unpaid_bills` migration.
 - Claude can correct the past: `update_transaction`, `remove_transaction`, `update_commitment`, `remove_commitment`, `remove_envelope` and `update_plan`. Payments dated before the plan's starting balance are flagged so Claude can explain they don't change balances. Confirming new payments stays in the app.
 
+### Performance
+- The first page load arrives with your numbers already in it: the server loads your month while rendering, behind an instant skeleton, instead of the browser fetching after it starts. Switching tabs makes no data requests.
+- A month loads in one database request (`app_snapshot()`) instead of seven in two waves. It also lifts the 1,000-transaction cap. Needs the `app_snapshot` migration; until then the app uses the old queries.
+- Saving no longer reloads the whole month; only a failed save reloads to roll back.
+- Payments Claude adds appear without a refresh, through Supabase Realtime. Needs the `realtime` migration.
+- The budget summary and the Inbox duplicate check are computed once per change instead of once per component.
+- One webfont instead of two.
+
 ### Fixed
+- Switching between currencies with different decimal places (INR and JPY) multiplied every amount by 100. It's now blocked while you have data.
+- Claude's `update_plan` and `reconcile` rejected a balance of exactly zero.
+- Saving the plan in Settings re-baselined on the balance from when the page opened, dropping any payment confirmed in the meantime. Balances now follow live figures and only an edited balance re-baselines.
+- Starting a new month moved carried-over weekly and yearly bills onto a day this month. They keep their dates unless you change the day.
+- Onboarding silently dropped half-filled bills and envelopes, and a salary with no pay day. Each is now pointed out before you continue.
+- The edit sheet offered envelopes for cash withdrawals and adjustments (turning a withdrawal into spending). Removing a payment now takes a second tap.
+- Incoming payments in the Inbox looked like spends; they now show as +amount.
+- Copy buttons failed silently when the clipboard was blocked. Deleting a bill now asks first. Envelope editors no longer save on every blur and pick up changes made by Claude.
+- Saturday is offered as a week start.
+- Database: indexes behind the set-null foreign keys, and deleting a bill removes it from `unpaid_bills`. Needs the `fk_indexes_and_bill_cleanup` migration.
 - Bills showed only what was still due as "This month", so bills already paid this month disappeared from the total. Bills now shows the full monthly total and what's still due, and marks bills done for the month.
 
 ### Changed

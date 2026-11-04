@@ -1,20 +1,29 @@
 "use client";
 
-import { useMemo } from "react";
 import { useActions, useAppData, useFormat, useToday } from "@/lib/data/context";
 import { categoryLabel } from "@/lib/data/category";
 import { findDuplicate } from "@/lib/engine/inbox";
 import type { Envelope, Txn } from "@/lib/engine/types";
 import { useUI } from "@/lib/ui";
 import { Icon } from "@/components/ui/Icon";
+import { accountLabel } from "./SourcePicker";
 import { SwipeCard } from "./SwipeCard";
 
-function usePending() {
+type PendingItem = { txn: Txn; duplicateOf: Txn | undefined };
+// The panel, the list and the page header all ask; the duplicate scan runs once per transactions list.
+const pendingCache = new WeakMap<Txn[], PendingItem[]>();
+
+function usePending(): PendingItem[] {
   const { txns } = useAppData();
-  return useMemo(() => {
-    const pending = txns.filter((t) => t.status === "pending").sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
-    return pending.map((t) => ({ txn: t, duplicateOf: findDuplicate(t, txns) }));
-  }, [txns]);
+  let items = pendingCache.get(txns);
+  if (!items) {
+    items = txns
+      .filter((t) => t.status === "pending")
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+      .map((t) => ({ txn: t, duplicateOf: findDuplicate(t, txns) }));
+    pendingCache.set(txns, items);
+  }
+  return items;
 }
 
 export function InboxView() {
@@ -86,7 +95,8 @@ function InboxList() {
 
 function TxnCard({ txn, duplicateOf, envelopes, today }: { txn: Txn; duplicateOf?: Txn; envelopes: Envelope[]; today: string }) {
   const edit = useUI((s) => s.edit);
-  const { commitments } = useAppData();
+  const { commitments, accounts } = useAppData();
+  const account = accountLabel(accounts, txn);
   const fmt = useFormat();
   return (
     <button type="button" onClick={() => edit(txn.id)} className="card block w-full p-4 text-left transition-colors hover:border-faint">
@@ -95,11 +105,15 @@ function TxnCard({ txn, duplicateOf, envelopes, today }: { txn: Txn; duplicateOf
           <p className="truncate text-[15px] font-medium">{txn.merchant}</p>
           <p className="mt-0.5 text-[13px] text-muted">{fmt.when(txn.occurredAt, today)}</p>
         </div>
-        <p className="text-[17px] font-medium tabular-nums">{fmt.money(txn.amount)}</p>
+        <p className={`shrink-0 text-[17px] font-medium tabular-nums ${txn.direction === "credit" ? "text-ok" : ""}`}>
+          {txn.direction === "credit" ? fmt.money(txn.amount, { signed: true }) : fmt.money(txn.amount)}
+          {txn.direction === "credit" && <span className="sr-only"> received</span>}
+        </p>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <span className="rounded-full bg-raised px-2.5 py-1 text-muted">{categoryLabel(envelopes, commitments, txn)}</span>
         {txn.wallet === "cash" && <span className="rounded-full bg-raised px-2.5 py-1 text-muted">Cash</span>}
+        {account && <span className="rounded-full bg-raised px-2.5 py-1 text-muted">{account}</span>}
         {txn.source === "claude" && (
           <span className="inline-flex items-center gap-1 text-faint">
             <Icon name="sparkle" size={12} />

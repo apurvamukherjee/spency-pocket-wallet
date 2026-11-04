@@ -1,4 +1,5 @@
 import { Logo } from "@/components/ui/Logo";
+import { SITE_TAGLINE } from "@/lib/site";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -28,7 +29,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           </div>
         </div>
         <p className="max-w-sm text-[15px] leading-relaxed text-muted">
-          A calm budget that ends every month on the balance you planned. Send Claude a payment screenshot; Spency does the rest.
+          {SITE_TAGLINE} Send Claude a payment screenshot; Spency does the rest.
         </p>
       </aside>
       <main className="flex items-center justify-center px-5 py-12 pt-[max(env(safe-area-inset-top),3rem)]">

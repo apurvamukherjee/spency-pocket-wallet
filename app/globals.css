@@ -15,7 +15,8 @@
   --color-bad: var(--bad);
 
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* System monospace: it only shows the connector URL, not worth a font download. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }

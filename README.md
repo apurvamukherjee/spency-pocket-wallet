@@ -1,6 +1,6 @@
 # Spency
 
-A budgeting app for people paid monthly that shows what's safe to spend today and lets Claude log payments from your screenshots.
+**End every month on the number you chose.** A budgeting app for people paid monthly that shows what's safe to spend today and lets Claude log payments from your screenshots.
 
 ```bash
 git clone https://github.com/apurvamukherjee/spency-pocket-wallet.git && cd spency-pocket-wallet && npm install && npm run dev
@@ -26,11 +26,18 @@ You tell Spency your balance today and the balance you want at month-end. It set
 
 - **Overspending is handled for you.** Go over on one envelope and Spency covers it from what you saved in others, then from flex, and only then from your month-end target. It tells you plainly: "You went $15 over on Coffee, and all of it was covered because you spent less on Groceries."
 - **Projected month-end** against your target, updated with every payment.
-- **Inbox** of payments Claude read from your screenshots. Swipe right to confirm, left to dismiss. Duplicates are flagged.
+- **Inbox** of payments Claude read from your screenshots. They appear as Claude sends them, no refresh needed. Swipe right to confirm, left to dismiss. Duplicates are flagged.
 - **Merchant memory.** Recategorize a shop once; future payments there land in the right envelope.
+- **Months that match your pay.** Run each month from payday to payday, or the 1st to the last day.
+- **Several bank accounts.** Your budget and target use the total; each payment shows which account it used, and moving money between your own accounts isn't spending.
+- **Yearly bills without the shock.** Insurance or an annual subscription is saved for a little each month, so the month it's due feels like any other.
+- **Refunds and extra income.** A refund goes back into the envelope it came from; extra income can be spent this month or saved.
+- **Works when you're overdrawn.** Balances and targets can be negative, so you can plan your way out of an overdraft.
+- **Off track? A real next step.** Spency tells you how much less a day gets you back to your target, or kindly says when it can't happen this month.
 - **Bills you can tick off.** Mark a bill paid and Spency logs the payment; untick one it assumed was paid and the money is set aside again. Payments can be filed under a bill straight from the Inbox.
 - **Nothing lands in Flex by accident.** Payments Spency or Claude can't place go to your default envelope (Small stuff unless you choose another in Settings); Flex is yours to pick.
 - **Cash** withdrawals are transfers, not spending. Cash purchases still count toward envelopes.
+- **Log or fix any day.** Quick add and the edit sheet take Today, Yesterday or any earlier date, so last night's cash spend lands on the right day.
 - **Daily reconcile** against your real bank balance, with a streak.
 - **Rebalance suggestions.** If one envelope goes over three weeks running while another stays under, Spency suggests moving money between them, applied in one tap.
 - **Start fresh** any time from Settings: a typed-confirmation reset that keeps your account.
@@ -56,7 +63,7 @@ Spency runs a remote [MCP](https://modelcontextprotocol.io) server at `/api/mcp`
 | Tool | What Claude can do |
 |---|---|
 | `get_summary` | Safe to spend today, envelopes, flex, bills, projected month-end. Answers "can I afford this?" |
-| `add_transactions` | Send payments read from screenshots to your Inbox as pending. Applies merchant memory, skips duplicates by reference or merchant + amount within 2 minutes. |
+| `add_transactions` | Send payments read from screenshots to your Inbox as pending. Applies merchant memory, skips duplicates by reference or merchant + amount within 2 minutes, files refunds back into their envelope, and takes the bank account when you have several. |
 | `list_transactions` | Look up payments by date, status or category. |
 | `update_envelope` | Change or create an envelope when you ask. |
 | `add_commitment` | Add a recurring bill. |
@@ -67,7 +74,7 @@ Spency runs a remote [MCP](https://modelcontextprotocol.io) server at `/api/mcp`
 | `update_commitment` / `remove_commitment` | Change or stop tracking a bill. |
 | `set_bill_paid` | "Netflix hasn't gone out yet" or "rent is paid": sets a bill's status for this month. |
 | `remove_envelope` | Delete an envelope; its history moves to Flex. |
-| `update_plan` | Change your target, pay and pay day, week start, or reset balances to what you have now. |
+| `update_plan` | Change your target, pay and pay day, week start, or reset balances to what you have now (negative if overdrawn). |
 
 Claude can't confirm transactions for you: new payments wait in your Inbox until you swipe them in. It can correct or remove existing ones when you ask, and it's told to check with you before removing anything or changing balances.
 
@@ -142,8 +149,8 @@ One Next.js 16 app serves the UI, the server actions and the MCP server.
 | Layer | Where | Notes |
 |---|---|---|
 | Budget engine | `lib/engine/` | Pure functions: settlement, projection, proration, money formatting. |
-| Data | `lib/data/` | Pure reducers shared by the local demo (Zustand) and the cloud (TanStack Query + Supabase, optimistic). |
-| Database | `supabase/migrations/` | Postgres with row level security on every table; composite keys stop cross-user references. |
+| Data | `lib/data/` | Pure reducers shared by the local demo (Zustand) and the cloud (TanStack Query + Supabase, optimistic). The server loads the signed-in month during the first render (`seed.ts`); Realtime keeps it current. |
+| Database | `supabase/migrations/` | Postgres with row level security on every table; composite keys stop cross-user references. `app_snapshot()` returns a month in one request. |
 | Auth | `app/(auth)/`, `proxy.ts` | Email and password through Supabase; the proxy refreshes the session cookie. |
 | Claude connector | `app/api/mcp/`, `lib/mcp/`, `app/(auth)/oauth/consent/` | MCP tools over Streamable HTTP (`mcp-handler`), OAuth 2.1 via Supabase Auth, consent screen. |
 | UI | `app/(app)/`, `components/` | Tailwind CSS 4, hand-drawn icons and charts, native `<dialog>` sheets. |

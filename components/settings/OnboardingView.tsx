@@ -4,16 +4,18 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { enginePlan, useActions, useAppData, useFormat, useToday } from "@/lib/data/context";
 import type { PlanInput } from "@/lib/data/types";
-import { addMonths, dayInMonth, daysInMonth, monthOf } from "@/lib/engine/dates";
+import { addMonths, dayInMonth, dayInPeriod, diffDays, monthOf, periodContaining } from "@/lib/engine/dates";
 import { unitOf } from "@/lib/engine/money";
-import { flexBudget, spendable } from "@/lib/engine/plan";
+import { billFundsAtEnd } from "@/lib/engine/derive";
+import { flexBudget, isCurrentPlan, spendable } from "@/lib/engine/plan";
 import type { Commitment, Envelope, Minor } from "@/lib/engine/types";
 import { defaultWeekStart } from "@/lib/locale";
 import { Icon } from "@/components/ui/Icon";
-import { Switch } from "@/components/ui/controls";
+import { Segmented, Switch } from "@/components/ui/controls";
 
 type EnvRow = { id: string; name: string; amount: string; on: boolean; locked: boolean; leftover: Envelope["leftover"] };
-type BillRow = { id: string; name: string; amount: string; day: string; frequency: Commitment["frequency"] };
+/** `original` is set for bills carried over from last month, so weekly and yearly ones keep their real dates. */
+type BillRow = { id: string; name: string; amount: string; day: string; frequency: Commitment["frequency"]; original?: Commitment };
 
 // Share of a week's spendable money each suggested envelope starts with; the rest stays in flex.
 const SUGGESTED: { name: string; share: number; on: boolean }[] = [
@@ -53,43 +55,84 @@ export function OnboardingView() {
 
   const [step, setStep] = useState(0);
   const [bank, setBank] = useState("");
+  // With several accounts, one balance each; the plan's bank figure is their total.
+  const accounts = data.accounts;
+  const several = accounts.length > 1;
+  const [accBank, setAccBank] = useState<Record<string, string>>({});
   const [target, setTarget] = useState(data.plan ? fmt.input(data.plan.target) : "");
   const [salary, setSalary] = useState(data.plan?.salary ? fmt.input(data.plan.salary.amount) : "");
   const [salaryDay, setSalaryDay] = useState(data.plan?.salary ? String(+data.plan.salary.date.slice(8)) : "");
+  // A month can run 1st to month end, or payday to payday (starting on the day pay usually lands).
+  const [cycle, setCycle] = useState<"calendar" | "payday">((data.plan?.startDay ?? 1) > 1 ? "payday" : "calendar");
+  const [startText, setStartText] = useState(String((data.plan?.startDay ?? 1) > 1 ? data.plan?.startDay : 25));
   const [envs, setEnvs] = useState<EnvRow[] | null>(
     data.envelopes.length
       ? data.envelopes.map((e) => ({ id: e.id, name: e.name, amount: fmt.input(e.weeklyLimit), on: true, locked: e.locked, leftover: e.leftover }))
       : null,
   );
   const [bills, setBills] = useState<BillRow[]>(
-    data.commitments.map((c) => ({ id: c.id, name: c.name, amount: fmt.input(c.amount), day: String(+c.nextDebit.slice(8)), frequency: c.frequency })),
+    data.commitments.map((c) => ({
+      id: c.id,
+      name: c.name,
+      amount: fmt.input(c.amount),
+      day: String(+c.nextDebit.slice(8)),
+      frequency: c.frequency,
+      original: c,
+    })),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const bankP = fmt.parse(bank);
-  const targetP = fmt.parse(target);
+  // Either can be below zero: an overdrawn account, or a target that pays an overdraft down.
+  const accParsed = accounts.map((a) => fmt.parseSigned(accBank[a.id] ?? ""));
+  const bankP = several
+    ? accParsed.every((v) => v !== null)
+      ? accParsed.reduce<number>((t, v) => t + (v ?? 0), 0)
+      : null
+    : fmt.parseSigned(bank);
+  const targetP = fmt.parseSigned(target);
   const salaryP = fmt.parse(salary);
   const salaryDayN = Number(salaryDay);
+  const salaryDayOk = salaryDayN >= 1 && salaryDayN <= 31;
+  const startN = Number(startText);
+  const startOk = cycle === "calendar" || (Number.isInteger(startN) && startN >= 1 && startN <= 31);
+  const startDay = cycle === "calendar" || !startOk ? 1 : startN;
+  const period = periodContaining(today, startDay);
+
+  // Yearly-bill savings carry over: from last month's plan as they stood at its end, or unchanged when redoing
+  // this month. Derived from that plan and its confirmed payments, so nothing is double counted.
+  const carried =
+    data.plan === null
+      ? {}
+      : isCurrentPlan(data.plan, today)
+        ? (data.plan.billFunds ?? {})
+        : billFundsAtEnd(enginePlan(data.plan, profile), data.commitments, data.txns);
+
+  const carriedTotal = Object.values(carried).reduce((s, v) => s + v, 0);
 
   const plan: PlanInput | null =
     bankP !== null && targetP !== null
       ? {
-          month: monthOf(today),
+          month: period.key,
+          startDay,
           openingBank: bankP,
+          // The main account holds the rest, so only the others are stored.
+          openingAccounts: several ? Object.fromEntries(accounts.slice(1).map((a, i) => [a.id, accParsed[i + 1] ?? 0])) : {},
           openingCash: 0,
           // Preview only; finish() stamps the real moment the balance was entered.
           balanceAt: `${today}T12:00:00Z`,
           target: targetP,
-          salary: salaryP && salaryDayN >= 1 && salaryDayN <= 31 ? { amount: salaryP, date: nextOnDay(salaryDayN, today) } : null,
+          // Pay counts only if its day in this month's period is still ahead (salaryInPlan checks).
+          salary: salaryP && salaryDayOk ? { amount: salaryP, date: dayInPeriod(period, salaryDayN) } : null,
           weekStart: data.plan?.weekStart ?? defaultWeekStart(profile.locale),
+          billFunds: carried,
         }
       : null;
   const full = plan && enginePlan({ ...plan, id: "draft" }, profile);
   const canSpend = full ? spendable(full) : 0;
 
   // Suggestions scale with what's actually spendable, so they make sense in any currency.
-  const weeklySpend = (canSpend * 7) / daysInMonth(monthOf(today));
+  const weeklySpend = (canSpend * 7) / (diffDays(today, period.end) + 1);
   const rows: EnvRow[] =
     envs ??
     SUGGESTED.map((s) => ({
@@ -106,16 +149,25 @@ export function OnboardingView() {
     const p = fmt.parse(r.amount);
     return r.on && r.name.trim() && p !== null ? [{ id: r.id, name: r.name.trim(), weeklyLimit: p, locked: r.locked, leftover: r.leftover }] : [];
   });
+  const billOk = (b: BillRow) => {
+    const day = Number(b.day);
+    return b.name.trim() !== "" && !!fmt.parse(b.amount) && day >= 1 && day <= 31;
+  };
   const commitments: Commitment[] = bills.flatMap((b) => {
     const p = fmt.parse(b.amount);
-    const day = Number(b.day);
-    return b.name.trim() && p && day >= 1 && day <= 31
-      ? [{ id: b.id, name: b.name.trim(), amount: p, frequency: b.frequency, nextDebit: nextOnDay(day, today) }]
-      : [];
+    if (!billOk(b) || !p) return [];
+    const o = b.original;
+    // Only monthly bills are described by a day of the month; others keep their date unless the day was changed.
+    const keep = o && o.frequency !== "monthly" && b.day === String(+o.nextDebit.slice(8));
+    return [{ id: b.id, name: b.name.trim(), amount: p, frequency: b.frequency, nextDebit: keep ? o.nextDebit : nextOnDay(Number(b.day), today) }];
   });
+  // Rows the user started but didn't finish would otherwise be dropped without a word.
+  const halfBills = bills.filter((b) => (b.name.trim() || b.amount || b.day) && !billOk(b)).length;
+  const halfEnvs = rows.filter((r) => r.on && (!r.name.trim() || fmt.parse(r.amount) === null)).length;
+  const salaryNeedsDay = salary.trim() !== "" && !salaryDayOk;
 
   const flex = full ? flexBudget(full, envelopes, commitments) : 0;
-  const canNext = step > 0 || (plan !== null && canSpend >= 0);
+  const canNext = step === 0 ? plan !== null && canSpend >= 0 && !salaryNeedsDay && startOk : step === 1 ? halfEnvs === 0 : true;
 
   async function finish() {
     if (!plan) return;
@@ -124,7 +176,11 @@ export function OnboardingView() {
     try {
       // Suggested rows use their name as a placeholder id until saved.
       const ids = envelopes.map((e) => (SUGGESTED.some((s) => s.name === e.id) ? { ...e, id: crypto.randomUUID() } : e));
-      await startMonth({ ...plan, balanceAt: new Date().toISOString() }, ids, commitments);
+      // Savings only stay with yearly bills that are kept; anything else is spendable again.
+      const billFunds = Object.fromEntries(
+        Object.entries(carried).filter(([id]) => commitments.some((c) => c.id === id && c.frequency === "yearly")),
+      );
+      await startMonth({ ...plan, balanceAt: new Date().toISOString(), billFunds }, ids, commitments);
       router.push("/");
     } catch (e) {
       console.error(e);
@@ -154,10 +210,67 @@ export function OnboardingView() {
 
       {step === 0 && (
         <div className="space-y-5">
-          <MoneyField label="What's in your bank right now?" symbol={fmt.symbol} value={bank} onChange={setBank} autoFocus />
+          <div className="space-y-2">
+            <span className="label">My month runs</span>
+            <Segmented<"calendar" | "payday">
+              label="My month runs"
+              value={cycle}
+              onChange={(c) => {
+                setCycle(c);
+                if (c === "payday" && salaryDayOk) setStartText(String(salaryDayN));
+              }}
+              options={[
+                { value: "calendar", label: "1st to month end" },
+                { value: "payday", label: "Payday to payday" },
+              ]}
+            />
+            {cycle === "payday" && (
+              <label className="flex items-center gap-3 pt-1 text-sm">
+                <span className="text-muted">Starts on day</span>
+                <input
+                  aria-label="Day the month starts"
+                  className="field w-20 tabular-nums"
+                  inputMode="numeric"
+                  maxLength={2}
+                  value={startText}
+                  onChange={(e) => setStartText(e.target.value.replace(/\D/g, ""))}
+                />
+              </label>
+            )}
+            <p className={`text-xs ${startOk ? "text-faint" : "text-warn"}`}>
+              {startOk
+                ? `This month: ${fmt.shortDay(period.start)} – ${fmt.shortDay(period.end)}.`
+                : "Pick a day from 1 to 31, usually the day your pay lands."}
+            </p>
+          </div>
+          {several ? (
+            <div className="space-y-3">
+              <p className="label">What&apos;s in each account right now?</p>
+              {accounts.map((a, i) => (
+                <MoneyField
+                  key={a.id}
+                  label={a.name}
+                  symbol={fmt.symbol}
+                  value={accBank[a.id] ?? ""}
+                  onChange={(v) => setAccBank({ ...accBank, [a.id]: v })}
+                  autoFocus={i === 0}
+                />
+              ))}
+              <p className="text-xs text-faint">Overdrawn? Put a minus in front, like -2000.</p>
+            </div>
+          ) : (
+            <MoneyField
+              label="What's in your bank right now?"
+              hint="Overdrawn? Put a minus in front, like -2000."
+              symbol={fmt.symbol}
+              value={bank}
+              onChange={setBank}
+              autoFocus
+            />
+          )}
           <MoneyField label="What would you like to end the month with?" symbol={fmt.symbol} value={target} onChange={setTarget} />
           <div className="grid grid-cols-[1fr_6rem] gap-3">
-            <MoneyField label="Pay still coming this month (optional)" symbol={fmt.symbol} value={salary} onChange={setSalary} />
+            <MoneyField label="Pay still to come (optional)" symbol={fmt.symbol} value={salary} onChange={setSalary} />
             <label className="space-y-1.5">
               <span className="label">Pay day</span>
               <input
@@ -170,10 +283,13 @@ export function OnboardingView() {
               />
             </label>
           </div>
+          {salaryNeedsDay && <p className="text-sm text-warn">Add the day your pay arrives so Spency can count it.</p>}
           {plan && (
             <p className={`text-sm ${canSpend >= 0 ? "text-muted" : "text-warn"}`}>
               {canSpend >= 0
-                ? `That gives you ${fmt.money(canSpend)} to work with this month.`
+                ? `That gives you ${fmt.money(canSpend)} to work with this month.${
+                    carriedTotal > 0 ? ` ${fmt.money(carriedTotal)} of your balance is already put aside for yearly bills.` : ""
+                  }`
                 : "Your target is above what you'll have. Try a lower target."}
             </p>
           )}
@@ -198,7 +314,7 @@ export function OnboardingView() {
                   aria-label={`${r.name} per week`}
                   inputMode="decimal"
                   disabled={!r.on}
-                  className="w-16 bg-transparent text-right tabular-nums outline-none disabled:text-faint"
+                  className="w-20 bg-transparent text-right tabular-nums outline-none disabled:text-faint"
                   value={r.amount}
                   onChange={(e) => updateRow(i, { amount: e.target.value })}
                 />
@@ -214,6 +330,11 @@ export function OnboardingView() {
             <Icon name="plus" size={16} />
             Another envelope
           </button>
+          {halfEnvs > 0 && (
+            <p className="text-sm text-warn">
+              Give every envelope that&apos;s switched on a name and a weekly amount, or switch it off.
+            </p>
+          )}
         </div>
       )}
 
@@ -221,10 +342,19 @@ export function OnboardingView() {
         <div className="space-y-4">
           <p className="text-sm text-muted">Rent, subscriptions, loans. These are set aside first.</p>
           {bills.map((b, i) => (
-            <div key={b.id} className="grid grid-cols-[1fr_6rem_4rem_auto] items-center gap-2">
+            <div key={b.id} className="grid grid-cols-[1fr_5.5rem_3.75rem_auto] items-center gap-2">
               <input aria-label="Bill name" className="field" placeholder="Name" value={b.name} onChange={(e) => updateBill(i, { name: e.target.value })} />
               <input aria-label="Amount" className="field tabular-nums" inputMode="decimal" placeholder={fmt.symbol} value={b.amount} onChange={(e) => updateBill(i, { amount: e.target.value })} />
-              <input aria-label="Day of month" className="field" inputMode="numeric" placeholder="Day" value={b.day} onChange={(e) => updateBill(i, { day: e.target.value })} />
+              <input
+                aria-label={b.frequency === "monthly" ? "Day of month" : `Day of month (${b.frequency} bill)`}
+                title={b.frequency === "monthly" ? undefined : `${b.frequency === "weekly" ? "Weekly" : "Yearly"} bill: keeps its date unless you change the day`}
+                className="field tabular-nums"
+                inputMode="numeric"
+                maxLength={2}
+                placeholder="Day"
+                value={b.day}
+                onChange={(e) => updateBill(i, { day: e.target.value.replace(/\D/g, "") })}
+              />
               <button type="button" aria-label="Remove bill" onClick={() => setBills(bills.filter((_, j) => j !== i))} className="p-2 text-faint hover:text-fg">
                 <Icon name="x" size={16} />
               </button>
@@ -242,6 +372,12 @@ export function OnboardingView() {
               </button>
             ))}
           </div>
+          {halfBills > 0 && (
+            <p className="text-sm text-warn">
+              {halfBills === 1 ? "One bill needs" : `${halfBills} bills need`} a name, an amount and a day (1–31) before you start, or
+              remove {halfBills === 1 ? "it" : "them"}.
+            </p>
+          )}
           {plan && (
             <p className={`pt-2 text-sm ${flex >= 0 ? "text-muted" : "text-warn"}`}>
               {flex >= 0
@@ -269,7 +405,7 @@ export function OnboardingView() {
             Continue
           </button>
         ) : (
-          <button type="button" disabled={!plan || saving} onClick={finish} className="btn btn-primary flex-1">
+          <button type="button" disabled={!plan || saving || halfBills > 0 || halfEnvs > 0} onClick={finish} className="btn btn-primary flex-1">
             {saving ? "Saving…" : "Start my month"}
           </button>
         )}
@@ -278,7 +414,14 @@ export function OnboardingView() {
   );
 }
 
-function MoneyField(props: { label: string; symbol: string; value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
+function MoneyField(props: {
+  label: string;
+  hint?: string;
+  symbol: string;
+  value: string;
+  onChange: (v: string) => void;
+  autoFocus?: boolean;
+}) {
   return (
     <label className="block space-y-1.5">
       <span className="label">{props.label}</span>
@@ -290,6 +433,7 @@ function MoneyField(props: { label: string; symbol: string; value: string; onCha
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
       />
+      {props.hint && <span className="block text-xs text-faint">{props.hint}</span>}
     </label>
   );
 }

@@ -3,9 +3,8 @@
 import { useState } from "react";
 import { addDays, dueWhen } from "@/lib/engine/dates";
 import { useActions, useData, useFormat, useSummary } from "@/lib/data/context";
-import { monthOf } from "@/lib/engine/dates";
 import { billStatus, type BillStatus } from "@/lib/engine/derive";
-import { commitmentDates, monthlyEquivalent } from "@/lib/engine/plan";
+import { billFund, commitmentDates, monthlyEquivalent, planWindow, saveMonthly } from "@/lib/engine/plan";
 import type { Commitment, Frequency, ISODate } from "@/lib/engine/types";
 import { Icon } from "@/components/ui/Icon";
 import { Segmented } from "@/components/ui/controls";
@@ -21,7 +20,9 @@ export function CommitmentsView() {
   const s = useSummary();
   const fmt = useFormat();
   const [editing, setEditing] = useState<Commitment | "new" | null>(null);
-  const month = monthOf(s.today);
+  // "This month" is the plan's month, which may run payday to payday.
+  const monthEnds = planWindow(plan).end;
+  const laterMonth = (d: ISODate) => d > monthEnds;
   const rows = commitments
     .map((c) => ({ c, next: nextDate(c, s.today), status: billStatus(plan, c, txns) }))
     .sort((a, b) => a.next.localeCompare(b.next));
@@ -65,6 +66,12 @@ export function CommitmentsView() {
           <p className="text-sm text-muted">Still due this month</p>
           <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums">{fmt.money(s.commitmentsRemaining)}</p>
         </div>
+        {s.billSavings > 0 && (
+          <p className="col-span-2 border-t border-line pt-4 text-sm text-muted">
+            {fmt.money(s.billSavings)} will be put aside for yearly bills by month end. It stays in your bank but isn&apos;t
+            counted as spending money.
+          </p>
+        )}
       </section>
 
       <section>
@@ -79,6 +86,8 @@ export function CommitmentsView() {
             const paid = status.state === "paid" || status.state === "assumed_paid";
             return (
               <li key={c.id} className="flex items-center gap-3">
+                {/* Not due this month: nothing to tick, but keep the row aligned with the others. */}
+                {status.state === "none" && <span aria-hidden className="size-6 shrink-0" />}
                 {status.state !== "none" && (
                   <button
                     type="button"
@@ -98,7 +107,7 @@ export function CommitmentsView() {
                       {status.state === "paid" ? (
                         <>
                           <span className="text-ok">Paid this month</span>
-                          {monthOf(next) !== month && <> · next {fmt.shortDay(next)}</>} ·{" "}
+                          {laterMonth(next) && <> · next {fmt.shortDay(next)}</>} ·{" "}
                         </>
                       ) : status.state === "assumed_paid" ? (
                         <>
@@ -106,7 +115,7 @@ export function CommitmentsView() {
                         </>
                       ) : status.state === "due" ? (
                         <>
-                          {unpaid.includes(c.id) && monthOf(next) !== month ? (
+                          {unpaid.includes(c.id) && laterMonth(next) ? (
                             <span className="text-warn">Not paid yet</span>
                           ) : (
                             <>
@@ -115,6 +124,8 @@ export function CommitmentsView() {
                           )}{" "}
                           ·{" "}
                         </>
+                      ) : saveMonthly(c) ? (
+                        <YearlyLine fund={billFund(plan, c)} />
                       ) : (
                         <>
                           Next {fmt.shortDay(next)} ·{" "}
@@ -149,15 +160,30 @@ export function CommitmentsView() {
   );
 }
 
-function CommitmentForm({ initial, today, onDone }: { initial: Commitment | null; today: ISODate; onDone: () => void }) {
-  const { saveCommitment, deleteCommitment } = useActions();
+/** "4,800 of 12,000 saved by 10 Mar ·" — progress toward a yearly bill that isn't due this month. */
+function YearlyLine({ fund }: { fund: ReturnType<typeof billFund> }) {
   const fmt = useFormat();
+  return (
+    <>
+      {fmt.money(fund.saved + fund.contribution)} of {fmt.money(fund.goal)} saved · due {fmt.shortDay(fund.dueDate)} ·{" "}
+    </>
+  );
+}
+
+function CommitmentForm({ initial, today, onDone }: { initial: Commitment | null; today: ISODate; onDone: () => void }) {
+  const { saveCommitment, deleteCommitment, setPlan } = useActions();
+  const { plan } = useData();
+  const fmt = useFormat();
+  const funds = plan.billFunds ?? {};
+  const [savedText, setSavedText] = useState(initial && funds[initial.id] ? fmt.input(funds[initial.id]) : "");
+  const saved = savedText.trim() === "" ? 0 : fmt.parse(savedText);
   const [name, setName] = useState(initial?.name ?? "");
   const [amountText, setAmountText] = useState(initial ? fmt.input(initial.amount) : "");
   const [frequency, setFrequency] = useState<Frequency>(initial?.frequency ?? "monthly");
   const [date, setDate] = useState(initial ? nextDate(initial, today) : today);
   const amount = fmt.parse(amountText);
-  const valid = name.trim() !== "" && amount !== null && amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(date);
+  const valid =
+    name.trim() !== "" && amount !== null && amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(date) && (frequency !== "yearly" || saved !== null);
 
   return (
     <form
@@ -165,7 +191,14 @@ function CommitmentForm({ initial, today, onDone }: { initial: Commitment | null
       onSubmit={(e) => {
         e.preventDefault();
         if (!valid || amount === null) return;
-        saveCommitment({ id: initial?.id ?? crypto.randomUUID(), name: name.trim(), amount, frequency, nextDebit: date });
+        const id = initial?.id ?? crypto.randomUUID();
+        saveCommitment({ id, name: name.trim(), amount, frequency, nextDebit: date });
+        // Only yearly bills hold savings; switching a bill away from yearly makes its savings spendable again.
+        const keep = frequency === "yearly" && saved ? saved : 0;
+        if (keep !== (funds[id] ?? 0)) {
+          const next = Object.fromEntries(Object.entries(funds).filter(([b]) => b !== id));
+          setPlan({ billFunds: keep ? { ...next, [id]: keep } : next });
+        }
         onDone();
       }}
     >
@@ -189,11 +222,29 @@ function CommitmentForm({ initial, today, onDone }: { initial: Commitment | null
         onChange={setFrequency}
         options={(["weekly", "monthly", "yearly"] as const).map((f) => ({ value: f, label: FREQ_LABEL[f] }))}
       />
+      {frequency === "yearly" && (
+        <label className="block space-y-1.5">
+          <span className="label">Already put aside for it</span>
+          <input
+            className="field tabular-nums"
+            inputMode="decimal"
+            placeholder={`${fmt.symbol}0`}
+            value={savedText}
+            onChange={(e) => setSavedText(e.target.value)}
+            aria-describedby="saved-hint"
+          />
+          <span id="saved-hint" className="block text-xs text-faint">
+            Spency saves the rest a little each month, so the month it&apos;s due isn&apos;t a shock. Money you&apos;ve already put aside
+            stays in your balance but isn&apos;t counted as spending money.
+          </span>
+        </label>
+      )}
       <div className="flex gap-3">
         {initial && (
           <button
             type="button"
             onClick={() => {
+              if (!confirm(`Delete ${initial.name}? Past payments stay, they just won't count as this bill.`)) return;
               deleteCommitment(initial.id);
               onDone();
             }}

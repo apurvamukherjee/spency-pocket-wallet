@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
 import { useHasCurrentPlan, useMode } from "@/lib/data/context";
+import type { Seed } from "@/lib/data/seed";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import { useUI } from "@/lib/ui";
 import { EditTxnSheet } from "@/components/inbox/EditTxnSheet";
@@ -14,7 +15,7 @@ import { DataRoot } from "./DataRoot";
 import { Sidebar, TabBar } from "./Nav";
 import { QuickAdd } from "./QuickAdd";
 
-function Loading() {
+export function Loading() {
   return (
     <div className="mx-auto w-full max-w-2xl animate-pulse space-y-4 px-4 pt-10 sm:px-6" aria-busy aria-label="Loading">
       <div className="h-4 w-32 rounded bg-surface" />
@@ -25,9 +26,9 @@ function Loading() {
 }
 
 /** Mobile: content + bottom tabs. ≥1024px: nav | main | persistent inbox. */
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, seed }: { children: ReactNode; seed: Seed | null }) {
   return (
-    <DataRoot fallback={<Loading />}>
+    <DataRoot fallback={<Loading />} seed={seed}>
       <div className="min-h-dvh lg:grid lg:grid-cols-[232px_minmax(0,1fr)_380px]">
         <Sidebar />
         <main className="mx-auto w-full max-w-2xl px-4 pt-[max(env(safe-area-inset-top),1.5rem)] pb-[calc(env(safe-area-inset-bottom)+7rem)] sm:px-6 lg:px-10 lg:pt-10 lg:pb-16">

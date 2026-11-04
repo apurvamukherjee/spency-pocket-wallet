@@ -7,6 +7,7 @@ import {
   major,
   MoneyError,
   parseMoney,
+  parseSignedMoney,
   toInputText,
   unitOf,
 } from "./money";
@@ -107,5 +108,21 @@ describe("allocateWhole", () => {
   });
   it("gives nothing when no one has weight", () => {
     expect(allocateWhole(150, [0, 0], 100)).toEqual([0, 0]);
+  });
+});
+
+describe("overdrawn balances", () => {
+  it("parses a leading minus only where signs are allowed", () => {
+    expect(parseSignedMoney("-1,500.50", INR)).toBe(-150050);
+    expect(parseSignedMoney("\u22122000", INR)).toBe(-200000);
+    expect(parseSignedMoney("-0", INR)).toBe(0);
+    expect(parseSignedMoney("1500", INR)).toBe(150000);
+    expect(parseMoney("-1500", INR)).toBeNull();
+  });
+
+  it("round-trips negative amounts through the input text", () => {
+    expect(toInputText(-150050, INR)).toBe("-1500.5");
+    expect(parseSignedMoney(toInputText(-150050, INR), INR)).toBe(-150050);
+    expect(toInputText(-5, INR)).toBe("-0.05");
   });
 });

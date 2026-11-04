@@ -1,18 +1,21 @@
-import { addDays, diffDays, monthStart, toLocalDate } from "./dates";
+import { addDays, diffDays, toLocalDate } from "./dates";
 import { floorToUnit, unitOf } from "./money";
 import {
   billFrom,
+  billFund,
   commitmentDates,
   commitmentsInPlan,
   flexBudget,
+  planPeriod,
   planWindow,
   salaryInPlan,
+  saveMonthly,
   spendable,
   weekAllocation,
   weeksCovering,
 } from "./plan";
 import { type Settlement, settleWeek, type SettlementStatus } from "./settle";
-import type { Commitment, Envelope, ISODate, MonthPlan, Minor, Txn } from "./types";
+import type { Account, Commitment, Envelope, ISODate, MonthPlan, Minor, Txn } from "./types";
 
 export type SpencyData = {
   plan: MonthPlan;
@@ -37,6 +40,8 @@ export type Summary = {
   spendable: Minor;
   commitmentsTotal: Minor;
   commitmentsRemaining: Minor;
+  /** Held for yearly bills that aren't due this month; still in the bank at month end, but not spendable. */
+  billSavings: Minor;
   salaryPending: Minor;
   flexBudget: Minor;
   /** May go negative when unplanned spends exceed the pool. */
@@ -47,6 +52,10 @@ export type Summary = {
   envelopeLeftThisWeek: Minor;
   daysLeftThisWeek: number;
   safeToday: Minor;
+  /** Money the plan still expects to be spent this month: envelopes this week and after, plus unused flex. */
+  budgetLeft: Minor;
+  /** Days from today to month end, inclusive. */
+  daysLeftMonth: number;
   projected: Minor;
   bonusSaved: Minor;
   status: SettlementStatus;
@@ -67,7 +76,8 @@ export function walletBalances(plan: MonthPlan, txns: Txn[]): { bank: Minor; cas
   let bank = plan.openingBank;
   let cash = plan.openingCash;
   for (const t of txns) {
-    if (!confirmedAfter(plan, t)) continue;
+    // A move between the user's own accounts leaves the bank total as it was.
+    if (!confirmedAfter(plan, t) || t.toAccountId) continue;
     const delta = signed(t);
     if (t.wallet === "bank") bank += delta;
     else cash += delta;
@@ -77,6 +87,31 @@ export function walletBalances(plan: MonthPlan, txns: Txn[]): { bank: Minor; cas
     }
   }
   return { bank, cash };
+}
+
+/**
+ * Each account's balance now. Payments without an account (or with one since deleted) belong to the main account
+ * (the first), which also holds whatever of openingBank the others don't, so the balances always sum to the bank
+ * total from walletBalances.
+ */
+export function accountBalances(plan: MonthPlan, accounts: Account[], txns: Txn[]): (Account & { balance: Minor })[] {
+  if (accounts.length === 0) return [];
+  const known = new Set(accounts.map((a) => a.id));
+  const main = accounts[0].id;
+  const home = (id: string | null | undefined) => (id && known.has(id) ? id : main);
+  const balance = new Map<string, Minor>(accounts.map((a) => [a.id, a.id === main ? 0 : (plan.openingAccounts?.[a.id] ?? 0)]));
+  const others = [...balance.values()].reduce((s, v) => s + v, 0);
+  balance.set(main, plan.openingBank - others);
+  for (const t of txns) {
+    if (!confirmedAfter(plan, t) || t.wallet !== "bank") continue;
+    const from = home(t.accountId);
+    balance.set(from, (balance.get(from) ?? 0) + signed(t));
+    if (t.toAccountId) {
+      const to = home(t.toAccountId);
+      balance.set(to, (balance.get(to) ?? 0) - signed(t));
+    }
+  }
+  return accounts.map((a) => ({ ...a, balance: balance.get(a.id) ?? 0 }));
 }
 
 /** Net envelope spend in [from, to]; refunds (credits) reduce it. Both wallets count. */
@@ -114,7 +149,8 @@ export function billStatus(plan: MonthPlan, c: Commitment, txns: Txn[]): BillSta
   const owed = c.amount * commitmentDates(c, billFrom(plan, c), end).length;
   const payments = txns.filter((t) => confirmedAfter(plan, t) && t.commitmentId === c.id && inRange(plan, t, start, end));
   const due = Math.max(0, owed - payments.reduce((s, t) => s - signed(t), 0));
-  const before = start > monthStart(plan.month) ? commitmentDates(c, monthStart(plan.month), addDays(start, -1)).length > 0 : false;
+  const periodStart = planPeriod(plan).start;
+  const before = start > periodStart ? commitmentDates(c, periodStart, addDays(start, -1)).length > 0 : false;
   const assumed = before && !plan.unpaidBills?.includes(c.id);
   const state = due > 0 ? "due" : payments.length ? "paid" : assumed ? "assumed_paid" : "none";
   return { state, due, paymentIds: payments.map((t) => t.id) };
@@ -122,6 +158,48 @@ export function billStatus(plan: MonthPlan, c: Commitment, txns: Txn[]): BillSta
 
 export function commitmentsRemaining(plan: MonthPlan, cs: Commitment[], txns: Txn[]): Minor {
   return cs.reduce((sum, c) => sum + billStatus(plan, c, txns).due, 0);
+}
+
+/** Savings for yearly bills not due this month, as they'll stand at month end. */
+export function billSavingsHeld(plan: MonthPlan, cs: Commitment[]): Minor {
+  return cs.reduce((sum, c) => {
+    if (!saveMonthly(c)) return sum;
+    const f = billFund(plan, c);
+    return f.dueThisMonth ? sum : sum + f.saved + f.contribution;
+  }, 0);
+}
+
+/**
+ * Each yearly bill's savings at the end of this plan's month: what was saved, plus this month's share, less what
+ * was paid. The next month's plan starts from these. Derived from the plan and confirmed payments only.
+ */
+export function billFundsAtEnd(plan: MonthPlan, cs: Commitment[], txns: Txn[]): Record<string, Minor> {
+  const { start, end } = planWindow(plan);
+  const out: Record<string, Minor> = {};
+  for (const c of cs) {
+    if (!saveMonthly(c)) continue;
+    const f = billFund(plan, c);
+    const paid = txns
+      .filter((t) => confirmedAfter(plan, t) && t.commitmentId === c.id && inRange(plan, t, start, end))
+      .reduce((s, t) => s - signed(t), 0);
+    const left = f.saved + f.contribution - paid;
+    if (left > 0) out[c.id] = left;
+  }
+  return out;
+}
+
+export type CatchUp =
+  /** Spending this much less per day than planned, until month end, lands exactly on target. */
+  | { kind: "per_day"; gap: Minor; perDay: Minor }
+  /** The gap is bigger than everything still planned for spending; it can't close this month. */
+  | { kind: "next_month"; gap: Minor; shortBy: Minor };
+
+/** The concrete way back when the projection is below target, or null when on track. */
+export function catchUp(s: Pick<Summary, "target" | "projected" | "budgetLeft" | "daysLeftMonth">, unit: number): CatchUp | null {
+  const gap = s.target - s.projected;
+  if (gap <= 0) return null;
+  if (gap > s.budgetLeft) return { kind: "next_month", gap, shortBy: gap - s.budgetLeft };
+  return { kind: "per_day", gap, perDay: Math.ceil(gap / Math.max(1, s.daysLeftMonth) / unit) * unit };
 }
 
 /** End-of-day bank + cash from plan start to `today`, for the month chart. */
@@ -203,8 +281,10 @@ export function summarize(data: SpencyData, today: ISODate): Summary {
   const salaryReceived = txns.some((t) => confirmedAfter(plan, t) && t.kind === "salary");
   const salaryPending = salaryReceived ? 0 : salaryInPlan(plan);
   const reserved = commitmentsRemaining(plan, commitments, txns);
+  const billSavings = billSavingsHeld(plan, commitments);
+  // Yearly-bill savings stay in the bank but aren't the user's to spend, so they don't count toward the target.
   const projected =
-    bank + cash + salaryPending - reserved - envelopeLeftThisWeek - futureWeeks - Math.max(0, flexLeft);
+    bank + cash + salaryPending - reserved - billSavings - envelopeLeftThisWeek - futureWeeks - Math.max(0, flexLeft);
 
   const weekLastDay = current.end > win.end ? win.end : current.end;
   const daysLeftThisWeek = diffDays(day, weekLastDay) + 1;
@@ -220,6 +300,7 @@ export function summarize(data: SpencyData, today: ISODate): Summary {
     spendable: spendable(plan),
     commitmentsTotal: commitmentsInPlan(plan, commitments),
     commitmentsRemaining: reserved,
+    billSavings,
     salaryPending,
     flexBudget: flexTotal,
     flexLeft,
@@ -228,6 +309,8 @@ export function summarize(data: SpencyData, today: ISODate): Summary {
     envelopeLeftThisWeek,
     daysLeftThisWeek,
     safeToday,
+    budgetLeft: envelopeLeftThisWeek + futureWeeks + Math.max(0, flexLeft),
+    daysLeftMonth,
     projected,
     bonusSaved,
     status: current.settlement.status,

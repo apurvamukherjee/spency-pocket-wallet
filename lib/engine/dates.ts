@@ -14,6 +14,26 @@ export function toLocalDate(instant: string | Date, timeZone: string): ISODate {
   return f.format(typeof instant === "string" ? new Date(instant) : instant);
 }
 
+/**
+ * Midday on calendar day `d` in `timeZone`, as a UTC ISO instant. Used when a payment is logged for a past day
+ * with no time: midday sits on the same calendar day in every zone, even across DST changes.
+ */
+export function middayIn(d: ISODate, timeZone: string): string {
+  const guess = Date.parse(`${d}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+  }).formatToParts(guess);
+  const n = (t: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === t)?.value);
+  const wall = Date.UTC(n("year"), n("month") - 1, n("day"), n("hour"), n("minute"));
+  return new Date(guess - (wall - guess)).toISOString();
+}
+
 export function todayIn(timeZone: string, now: Date = new Date()): ISODate {
   return toLocalDate(now, timeZone);
 }
@@ -89,3 +109,36 @@ export function addMonths(d: ISODate, n: number, anchorDay = +d.slice(8, 10)): I
   const m = `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}`;
   return `${m}-${String(Math.min(anchorDay, daysInMonth(m))).padStart(2, "0")}`;
 }
+
+/**
+ * Plans can run payday to payday. A period starts on `startDay` of a month (clamped in short months) and ends the
+ * day before the next start; startDay 1 is the calendar month. Each period is keyed by the month it ends in, so
+ * keys only move forward and a calendar plan is replaced, not outlived, when switching mid-month.
+ */
+export type Period = { start: ISODate; end: ISODate; key: MonthKey };
+
+const shiftMonth = (m: MonthKey, n: number): MonthKey => monthOf(addMonths(`${m}-01`, n));
+
+function periodFrom(start: ISODate, startDay: number): Period {
+  const end = addDays(dayInMonth(shiftMonth(monthOf(start), 1), startDay), -1);
+  return { start, end, key: monthOf(end) };
+}
+
+/** The period that contains day `d`. */
+export function periodContaining(d: ISODate, startDay = 1): Period {
+  const here = dayInMonth(monthOf(d), startDay);
+  return periodFrom(d >= here ? here : dayInMonth(shiftMonth(monthOf(d), -1), startDay), startDay);
+}
+
+/** The period with key `key` (the month it ends in). */
+export function periodOfKey(key: MonthKey, startDay = 1): Period {
+  // The period ending in `key` starts in `key` itself for startDay 1, else in the month before.
+  return periodFrom(dayInMonth(startDay === 1 ? key : shiftMonth(key, -1), startDay), startDay);
+}
+
+/** The date inside `p` that falls on day-of-month `day` (clamped), e.g. a pay day. */
+export function dayInPeriod(p: Pick<Period, "start" | "end">, day: number): ISODate {
+  const first = dayInMonth(monthOf(p.start), day);
+  return first >= p.start && first <= p.end ? first : dayInMonth(monthOf(p.end), day);
+}
+

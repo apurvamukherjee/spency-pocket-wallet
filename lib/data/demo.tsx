@@ -3,7 +3,8 @@
 import { type ReactNode, useEffect, useMemo, useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { monthOf, todayIn } from "@/lib/engine/dates";
+import { todayIn } from "@/lib/engine/dates";
+import { isCurrentPlan } from "@/lib/engine/plan";
 import { seedData } from "@/lib/seed";
 import { applyTheme } from "@/lib/theme";
 import { SpencyContext } from "./context";
@@ -19,6 +20,7 @@ function demoData(): AppData {
   return {
     profile: { displayName: "Demo", email: null, currency, locale: "en-IN", timeZone, theme },
     plan: { ...plan, id: "demo-plan" },
+    accounts: [],
     envelopes: data.envelopes,
     commitments: data.commitments,
     txns: data.txns,
@@ -57,6 +59,11 @@ export const useDemoStore = create<DemoState>()(
       storage: createJSONStorage(() => window.localStorage),
       skipHydration: true,
       partialize: ({ data, active }) => ({ data, active }),
+      // Demo months saved before bank accounts existed have no accounts list.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<DemoState>;
+        return { ...current, ...p, data: p.data ? { ...p.data, accounts: p.data.accounts ?? [] } : current.data };
+      },
     },
   ),
 );
@@ -78,6 +85,8 @@ const demoActions: Actions = {
     updateTxn: (id, patch) => apply((d) => r.updateTxn(d, id, patch)),
     setStatus: (ids, status) => apply((d) => r.setStatus(d, ids, status)),
     setPlan: (patch) => apply((d) => r.setPlan(d, patch)),
+    saveAccounts: (accounts) => apply((d) => r.saveAccounts(d, accounts)),
+    deleteAccount: (id) => apply((d) => r.deleteAccount(d, id)),
     saveEnvelope: (e) => apply((d) => r.saveEnvelope(d, e)),
     deleteEnvelope: (id) => apply((d) => r.deleteEnvelope(d, id)),
     saveCommitment: (c) => apply((d) => r.saveCommitment(d, c)),
@@ -98,7 +107,7 @@ export function DemoProvider({ children, fallback }: { children: ReactNode; fall
   useEffect(() => {
     const d = useDemoStore.getState().data;
     // A reset leaves plan null on purpose (onboarding), so only a stale month regenerates.
-    if (ready && (!d || (d.plan && d.plan.month !== monthOf(todayIn(d.profile.timeZone))))) useDemoStore.getState().reset();
+    if (ready && (!d || (d.plan && !isCurrentPlan(d.plan, todayIn(d.profile.timeZone))))) useDemoStore.getState().reset();
   }, [ready]);
 
   useEffect(() => {

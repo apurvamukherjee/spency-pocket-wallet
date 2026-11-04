@@ -1,10 +1,11 @@
 import { type Category, categoryLabel, FLEX } from "@/lib/data/category";
 import type { AppData } from "@/lib/data/types";
-import type { Summary } from "@/lib/engine/derive";
+import { addDays } from "@/lib/engine/dates";
+import { catchUp, type Summary } from "@/lib/engine/derive";
 import { findDuplicate, type MerchantMemory, recallEnvelope } from "@/lib/engine/inbox";
 import type { FormatMoney } from "@/lib/engine/money";
 import { coverLine, describeSettlement, type SettlementStatus } from "@/lib/engine/settle";
-import type { Commitment, Envelope, Minor, Txn, Wallet } from "@/lib/engine/types";
+import type { Account, Commitment, Envelope, Minor, Txn, Wallet } from "@/lib/engine/types";
 
 // Pure helpers behind the MCP tools: no I/O, so they're unit-tested like the engine.
 
@@ -25,6 +26,18 @@ export function toMinor(value: number | string, unit: number): Minor {
   const minor = Number(m[1]) * unit + Number(frac.padEnd(digits, "0") || "0");
   if (minor <= 0) throw new ToolInputError("Amounts must be greater than zero.");
   return minor;
+}
+
+/** For balances and targets, which can be zero or overdrawn: "-2000" → minus 2,000. Payment amounts use toMinor. */
+export function toSignedMinor(value: number | string, unit: number): Minor {
+  const text = String(value).trim();
+  const negative = /^[-\u2212]/.test(text);
+  const rest = negative ? text.slice(1) : text;
+  // Zero is a valid balance (toMinor rejects it as a payment amount): digits present, and all of them zero.
+  const plain = rest.replace(/[\s,]/g, "").replace(/^[^\d.]+/, "");
+  if (/\d/.test(plain) && /^0*(?:\.0*)?$/.test(plain)) return 0;
+  const v = toMinor(rest, unit);
+  return negative ? -v : v;
 }
 
 export type CategoryMatch = Category & { via: "memory" | "bill" | "suggestion" | "default" };
@@ -79,12 +92,31 @@ export function beforePlanNote(occurredAt: string, planStart: string | null): st
   return `Dated before this month's plan started (${planStart.slice(0, 10)}), so it's on record but doesn't change balances: the starting balance already included it.`;
 }
 
+/**
+ * A bank account by name (case-insensitive, exact first, then partial). The main account is stored as null, like
+ * payments that name no account. Unknown names list the real ones so Claude can ask.
+ */
+export function findAccount(accounts: Account[], name: string): string | null {
+  const n = name.trim().toLowerCase();
+  const hit = accounts.find((a) => a.name.toLowerCase() === n) ?? accounts.find((a) => a.name.toLowerCase().includes(n));
+  if (!hit) {
+    throw new ToolInputError(
+      accounts.length > 1
+        ? `No account called "${name}". The user's accounts are: ${accounts.map((a) => a.name).join(", ")}.`
+        : "The user has a single bank account; leave account out.",
+    );
+  }
+  return hit.id === accounts[0].id ? null : hit.id;
+}
+
 export type TxnInput = {
   amount: number | string;
   merchant: string;
   occurred_at?: string;
   reference?: string;
   wallet?: Wallet;
+  /** Bank account name when the user has several; default the main account. */
+  account?: string;
   direction?: "debit" | "credit";
   suggested_category?: string;
   note?: string;
@@ -100,7 +132,7 @@ export type ImportPlan = {
  * (same reference, or same merchant + amount within 2 minutes) and of earlier items in the same batch.
  */
 export function planImport(
-  d: Pick<AppData, "envelopes" | "memory" | "txns" | "commitments"> & { defaultEnvelopeId: string | null },
+  d: Pick<AppData, "envelopes" | "memory" | "txns" | "commitments"> & { defaultEnvelopeId: string | null; accounts?: Account[] },
   inputs: TxnInput[],
   unit: number,
   now: string,
@@ -124,19 +156,26 @@ export function planImport(
       continue;
     }
     const credit = input.direction === "credit";
-    const category = resolveCategory(d.envelopes, d.memory, merchant, input.suggested_category, {
+    const wallet = input.wallet ?? "bank";
+    const accountId = wallet === "bank" && input.account?.trim() ? findAccount(d.accounts ?? [], input.account) : null;
+    const found = resolveCategory(d.envelopes, d.memory, merchant, input.suggested_category, {
       bills: d.commitments,
       fallback: d.defaultEnvelopeId,
     });
+    // Money in from a merchant Spency knows (or one Claude filed under an envelope) is a refund: it goes back
+    // into that envelope. Anything else, a salary or a friend paying back, is income and goes toward the target.
+    const refund = credit && (found.via === "memory" || found.via === "suggestion");
+    const category = credit && !refund ? { envelopeId: null, commitmentId: null, via: found.via } : found;
     const txn: Txn = {
       id: newId(),
-      wallet: input.wallet ?? "bank",
+      wallet,
+      accountId,
       amount,
       direction: credit ? "credit" : "debit",
-      kind: credit ? "income" : "expense",
+      kind: credit && !refund ? "income" : "expense",
       merchant,
-      envelopeId: credit ? null : category.envelopeId,
-      commitmentId: credit ? null : category.commitmentId,
+      envelopeId: category.envelopeId,
+      commitmentId: refund ? null : category.commitmentId,
       occurredAt: when.toISOString(),
       source: "claude",
       status: "pending",
@@ -156,11 +195,31 @@ const STATUS_LABEL: Record<SettlementStatus, string> = {
   target_hit: "Below target",
 };
 
+/** The concrete way back to target, phrased for Claude to pass on kindly. Empty when on track. */
+function catchUpPayload(s: Summary, unit: number, money: FormatMoney): { to_get_back_on_track?: string } {
+  const c = catchUp(s, unit);
+  if (!c) return {};
+  return {
+    to_get_back_on_track:
+      c.kind === "per_day"
+        ? `Spend about ${money(c.perDay)} a day less than planned for the rest of the month to end on ${money(s.target)}.`
+        : `The gap can't close this month: even with no more spending the user ends ${money(c.shortBy)} short. Suggest a slightly lower target next month.`,
+  };
+}
+
 /** What Claude needs to answer "can I afford this?" and to map screenshots to envelope names. */
-export function summaryPayload(s: Summary, d: Pick<AppData, "envelopes" | "txns" | "commitments">, money: FormatMoney) {
+export function summaryPayload(
+  s: Summary,
+  d: Pick<AppData, "envelopes" | "txns" | "commitments">,
+  money: FormatMoney,
+  /** Minor units per major unit of the plan currency (unitOf), for rounding the catch-up figure. */
+  unit: number,
+) {
   const settlement = s.current.settlement;
   return {
     date: s.today,
+    // The plan's month may run payday to payday, so it can end on any day.
+    month_ends: addDays(s.today, s.daysLeftMonth - 1),
     safe_to_spend_today: money(s.safeToday),
     this_week: {
       status: STATUS_LABEL[s.status],
@@ -177,9 +236,12 @@ export function summaryPayload(s: Summary, d: Pick<AppData, "envelopes" | "txns"
     })),
     flex_left: money(Math.max(0, s.flexLeft)),
     bills_still_due_this_month: money(s.commitmentsRemaining),
+    // Held in the bank for yearly bills that aren't due yet; not spendable, not part of the target.
+    set_aside_for_yearly_bills: money(s.billSavings),
     projected_month_end: money(s.projected),
     target_month_end: money(s.target),
     on_track_for_target: s.projected >= s.target,
+    ...catchUpPayload(s, unit, money),
     bonus_saved_this_month: money(s.bonusSaved),
     bank_balance: money(s.bank),
     cash_in_hand: money(s.cash),
@@ -189,13 +251,18 @@ export function summaryPayload(s: Summary, d: Pick<AppData, "envelopes" | "txns"
   };
 }
 
-export function txnPayload(t: Txn, envelopes: Envelope[], bills: Commitment[], money: FormatMoney) {
+export function txnPayload(t: Txn, envelopes: Envelope[], bills: Commitment[], money: FormatMoney, accounts: Account[] = []) {
+  const name = (id: string | null | undefined) => (accounts.length > 1 ? (accounts.find((a) => a.id === id) ?? accounts[0]).name : null);
+  const account = t.wallet === "bank" ? name(t.accountId) : null;
+  const to = t.toAccountId ? name(t.toAccountId) : null;
   return {
     id: t.id,
     merchant: t.merchant,
     amount: money(t.direction === "credit" ? t.amount : -t.amount),
     category: categoryLabel(envelopes, bills, t),
     wallet: t.wallet,
+    ...(account ? { account } : {}),
+    ...(to ? { moved_to: to } : {}),
     occurred_at: t.occurredAt,
     status: t.status,
     ...(t.upiRef ? { reference: t.upiRef } : {}),

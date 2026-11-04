@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useMemo, useState } from "react";
-import { useActions, useAppData, useFormat, useMode, useSignOut, useSummary, useHasCurrentPlan } from "@/lib/data/context";
+import { useActions, useAppData, useData, useFormat, useMode, useSignOut, useSummary, useHasCurrentPlan } from "@/lib/data/context";
+import { accountBalances } from "@/lib/engine/derive";
 import { useDemoStore } from "@/lib/data/demo";
-import { dayInMonth } from "@/lib/engine/dates";
+import { dayInPeriod } from "@/lib/engine/dates";
+import { planPeriod } from "@/lib/engine/plan";
 import { defaultEnvelopeId } from "@/lib/engine/inbox";
+import { unitOf } from "@/lib/engine/money";
 import type { Theme } from "@/lib/data/types";
 import { currencyOptions, localeOptions, timeZoneOptions } from "@/lib/locale";
 import { supabaseConfigured } from "@/lib/supabase/env";
@@ -92,8 +95,24 @@ function Select({ label, value, onChange, children }: { label: string; value: st
 }
 
 function Preferences() {
-  const { profile } = useAppData();
+  const { profile, plan, txns, envelopes, commitments } = useAppData();
   const { updateProfile } = useActions();
+  const [currencyBlocked, setCurrencyBlocked] = useState<string | null>(null);
+  const hasMoney = plan !== null || txns.length > 0 || envelopes.length > 0 || commitments.length > 0;
+
+  /**
+   * Amounts are stored in the currency's smallest unit. Between currencies with the same number of decimals a
+   * switch is a harmless relabel; between different ones (rupees have 2, yen 0) every amount would be off by
+   * 100×, so it's blocked while there's data.
+   */
+  function setCurrency(currency: string) {
+    if (hasMoney && unitOf(currency) !== unitOf(profile.currency)) {
+      setCurrencyBlocked(currency);
+      return;
+    }
+    setCurrencyBlocked(null);
+    updateProfile({ currency });
+  }
   const currencies = useMemo(() => currencyOptions(profile.locale), [profile.locale]);
   const locales = useMemo(() => localeOptions(profile.locale, profile.locale), [profile.locale]);
   const zones = useMemo(() => timeZoneOptions(profile.timeZone), [profile.timeZone]);
@@ -119,7 +138,7 @@ function Preferences() {
 
       <Section title="Region" hint="How money, dates and weeks look to you.">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Select label="Currency" value={profile.currency} onChange={(currency) => updateProfile({ currency })}>
+          <Select label="Currency" value={profile.currency} onChange={setCurrency}>
             {currencies.map((c) => (
               <option key={c.value} value={c.value}>
                 {c.label}
@@ -143,10 +162,18 @@ function Preferences() {
             </Select>
           </div>
         </div>
-        <p className="text-xs text-faint">Switching currency relabels your amounts; it doesn&apos;t convert them.</p>
+        {currencyBlocked ? (
+          <p role="alert" className="text-sm text-warn">
+            {currencyBlocked} uses a different number of decimal places from {profile.currency}, so your amounts would come out wrong.
+            To switch, use Start fresh below first, then pick {currencyBlocked}.
+          </p>
+        ) : (
+          <p className="text-xs text-faint">Switching currency relabels your amounts; it doesn&apos;t convert them.</p>
+        )}
       </Section>
 
       <Sorting />
+      <Accounts />
     </>
   );
 }
@@ -176,50 +203,175 @@ function Sorting() {
   );
 }
 
+const WEEK_STARTS = [
+  { value: "1", label: "Monday" },
+  { value: "0", label: "Sunday" },
+  { value: "6", label: "Saturday" },
+] as const;
+type WeekStartValue = (typeof WEEK_STARTS)[number]["value"];
+
+/** Bank accounts. Budgets use the total; accounts show where the money sits. */
+function Accounts() {
+  const { accounts, plan } = useAppData();
+  const { saveAccounts, deleteAccount } = useActions();
+  const hasPlan = useHasCurrentPlan();
+
+  const add = () =>
+    saveAccounts(
+      accounts.length === 0
+        ? // Splitting the single implicit account: the existing money stays in the main one.
+          [
+            { id: crypto.randomUUID(), name: "Main account" },
+            { id: crypto.randomUUID(), name: "Savings" },
+          ]
+        : [...accounts, { id: crypto.randomUUID(), name: `Account ${accounts.length + 1}` }],
+    );
+
+  return (
+    <Section
+      title="Bank accounts"
+      hint="Your budget and target use the total across accounts. Accounts show where the money sits and which one a payment used."
+    >
+      {accounts.length === 0 ? (
+        <p className="text-sm text-muted">One bank account.</p>
+      ) : (
+        <ul className="divide-y divide-line rounded-2xl border border-line">
+          {accounts.map((a, i) => (
+            <AccountRow
+              key={`${a.id}:${a.name}`}
+              name={a.name}
+              main={i === 0}
+              onRename={(name) => saveAccounts(accounts.map((x) => (x.id === a.id ? { ...x, name } : x)))}
+              onRemove={() => {
+                const to = i === 0 ? accounts[1]?.name : accounts[0].name;
+                if (confirm(`Remove ${a.name}? Its payments${to ? ` and balance move to ${to}` : ""}.`)) deleteAccount(a.id);
+              }}
+            />
+          ))}
+        </ul>
+      )}
+      <button type="button" onClick={add} className="btn btn-ghost w-full">
+        <Icon name="plus" size={18} />
+        Add {accounts.length === 0 ? "another" : "an"} account
+      </button>
+      {accounts.length > 1 && hasPlan && plan && (
+        <p className="text-xs text-faint">New accounts start at zero. Set each one&apos;s balance under This month&apos;s plan.</p>
+      )}
+    </Section>
+  );
+}
+
+function AccountRow({ name, main, onRename, onRemove }: { name: string; main: boolean; onRename: (n: string) => void; onRemove: () => void }) {
+  const [text, setText] = useState(name);
+  return (
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <input
+        aria-label="Account name"
+        value={text}
+        maxLength={60}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => {
+          const next = text.trim();
+          if (!next) setText(name);
+          else if (next !== name) onRename(next);
+        }}
+        className="min-w-0 flex-1 bg-transparent text-[15px] outline-none"
+      />
+      {main && <span className="text-xs text-faint">Main</span>}
+      <button type="button" onClick={onRemove} aria-label={`Remove ${name}`} className="p-1 text-faint hover:text-bad">
+        <Icon name="trash" size={16} />
+      </button>
+    </li>
+  );
+}
+
 function PlanForm() {
-  const { plan } = useAppData();
+  const { plan, accounts } = useAppData();
   const s = useSummary();
+  const data = useData();
+  const live = useMemo(() => accountBalances(data.plan, accounts, data.txns), [data, accounts]);
+  const several = accounts.length > 1;
+  // Per-account balances (several accounts), following live figures until edited, like the single bank field.
+  const [accTexts, setAccTexts] = useState<Record<string, string> | null>(null);
+  const accText = (id: string, balance: number) => accTexts?.[id] ?? fmt.input(balance);
   const fmt = useFormat();
   const { setPlan } = useActions();
 
-  const [bank, setBank] = useState(fmt.input(s.bank));
-  const [cash, setCash] = useState(fmt.input(s.cash));
+  // Balances keep following the live numbers until the user types in them. Saving untouched balances would
+  // re-baseline on a stale figure and silently drop anything confirmed since the page opened.
+  const [bankText, setBank] = useState<string | null>(null);
+  const [cashText, setCash] = useState<string | null>(null);
+  const accParsed = live.map((a) => fmt.parseSigned(accText(a.id, a.balance)));
+  const accOk = accParsed.every((v) => v !== null);
+  const bank = several ? (accOk ? fmt.input(accParsed.reduce<number>((t, v) => t + (v ?? 0), 0)) : "") : (bankText ?? fmt.input(s.bank));
+  const cash = cashText ?? fmt.input(s.cash);
   const [target, setTarget] = useState(fmt.input(s.target));
   const [salary, setSalary] = useState(plan?.salary ? fmt.input(plan.salary.amount) : "");
   // Just the day of the month; the year and month always come from the plan.
   const [salaryDay, setSalaryDay] = useState(plan?.salary ? String(+plan.salary.date.slice(8)) : "");
-  const [weekStart, setWeekStart] = useState(String(plan?.weekStart ?? 1) as "0" | "1");
+  const [weekStart, setWeekStart] = useState<WeekStartValue>(
+    WEEK_STARTS.find((w) => w.value === String(plan?.weekStart ?? 1))?.value ?? "1",
+  );
   const [saved, setSaved] = useState(false);
+  const edit =
+    <T,>(set: (v: T) => void) =>
+    (v: T) => {
+      set(v);
+      setSaved(false);
+    };
 
-  const p = { bank: fmt.parse(bank), cash: fmt.parse(cash || "0"), target: fmt.parse(target), salary: fmt.parse(salary) };
+  // The bank balance and target may be negative (overdraft); cash and salary can't be.
+  const p = { bank: fmt.parseSigned(bank), cash: fmt.parse(cash || "0"), target: fmt.parseSigned(target), salary: fmt.parse(salary) };
   const day = Number(salaryDay);
   const dayOk = Number.isInteger(day) && day >= 1 && day <= 31;
   const valid = p.bank !== null && p.cash !== null && p.target !== null && (!salary || (p.salary !== null && dayOk));
+  const rebase = bankText !== null || cashText !== null || accTexts !== null;
 
   function save(e: React.FormEvent) {
     e.preventDefault();
     if (!valid || p.bank === null || p.cash === null || p.target === null) return;
-    // Re-baselining: balances are true as of now, so earlier transactions are already inside them.
     setPlan({
-      openingBank: p.bank,
-      openingCash: p.cash,
-      balanceAt: new Date().toISOString(),
+      // Re-baselining only when a balance was edited: they're true as of now, so earlier payments are inside them.
+      ...(rebase
+        ? {
+            openingBank: p.bank,
+            openingCash: p.cash,
+            balanceAt: new Date().toISOString(),
+            // The main account takes whatever the others don't, so only the others are stored.
+            ...(several ? { openingAccounts: Object.fromEntries(live.slice(1).map((a, i) => [a.id, accParsed[i + 1] ?? 0])) } : {}),
+          }
+        : {}),
       target: p.target,
-      salary: p.salary && dayOk && plan ? { amount: p.salary, date: dayInMonth(plan.month, day) } : null,
+      salary: p.salary && dayOk && plan ? { amount: p.salary, date: dayInPeriod(planPeriod(plan), day) } : null,
       weekStart: Number(weekStart),
     });
+    setBank(null);
+    setCash(null);
+    setAccTexts(null);
     setSaved(true);
   }
 
   return (
     <Section title="This month's plan" hint={`Spendable this month: ${fmt.money(s.spendable)}`}>
-      <form onSubmit={save} onChange={() => setSaved(false)} className="space-y-5">
+      <form onSubmit={save} className="space-y-5">
         <div className="grid grid-cols-2 gap-4">
-          <Money label="Bank balance now" symbol={fmt.symbol} value={bank} onChange={setBank} />
-          <Money label="Cash in hand" symbol={fmt.symbol} value={cash} onChange={setCash} />
-          <Money label="Month-end target" symbol={fmt.symbol} value={target} onChange={setTarget} />
+          {several ? (
+            live.map((a) => (
+              <Money
+                key={a.id}
+                label={`${a.name} now`}
+                symbol={fmt.symbol}
+                value={accText(a.id, a.balance)}
+                onChange={edit((v: string) => setAccTexts({ ...Object.fromEntries(live.map((x) => [x.id, accText(x.id, x.balance)])), [a.id]: v }))}
+              />
+            ))
+          ) : (
+            <Money label="Bank balance now" symbol={fmt.symbol} value={bank} onChange={edit(setBank)} />
+          )}
+          <Money label="Cash in hand" symbol={fmt.symbol} value={cash} onChange={edit(setCash)} />
+          <Money label="Month-end target" symbol={fmt.symbol} value={target} onChange={edit(setTarget)} />
           <div />
-          <Money label="Salary (optional)" symbol={fmt.symbol} value={salary} onChange={setSalary} />
+          <Money label="Salary (optional)" symbol={fmt.symbol} value={salary} onChange={edit(setSalary)} />
           <label className="space-y-1.5">
             <span className="label">Pay day</span>
             <input
@@ -229,26 +381,32 @@ function PlanForm() {
               maxLength={2}
               aria-describedby="payday-hint"
               value={salaryDay}
-              onChange={(e) => setSalaryDay(e.target.value.replace(/\D/g, ""))}
+              onChange={(e) => edit(setSalaryDay)(e.target.value.replace(/\D/g, ""))}
             />
             <span id="payday-hint" className="block text-xs text-faint">
               Day of the month. If it&apos;s already passed, Spency treats this month&apos;s pay as received.
             </span>
           </label>
         </div>
+        {salary && !dayOk && <p className="text-sm text-warn">Add the day your pay arrives so Spency can count it.</p>}
         <div className="space-y-2">
           <span className="label">Weeks start on</span>
-          <Segmented
-            label="Week start"
-            value={weekStart}
-            onChange={setWeekStart}
-            options={[
-              { value: "1", label: "Monday" },
-              { value: "0", label: "Sunday" },
-            ]}
-          />
+          <Segmented<WeekStartValue> label="Week start" value={weekStart} onChange={edit(setWeekStart)} options={[...WEEK_STARTS]} />
         </div>
-        <p className="text-sm text-muted">Saving makes these balances your new starting point, as of right now.</p>
+        {plan && (
+          <p className="text-sm text-muted">
+            This month runs {fmt.shortDay(planPeriod(plan).start)} – {fmt.shortDay(planPeriod(plan).end)}
+            {(plan.startDay ?? 1) > 1 ? ", payday to payday" : ""}.{" "}
+            <Link href="/onboarding" className="text-fg underline underline-offset-4">
+              Change how months run
+            </Link>
+          </p>
+        )}
+        <p className="text-sm text-muted">
+          {rebase
+            ? "Saving makes these balances your new starting point, as of right now."
+            : "Balances follow your payments. Type a new one only if your bank shows something different."}
+        </p>
         <button type="submit" disabled={!valid} className="btn btn-primary w-full">
           {saved ? "Saved" : "Save plan"}
         </button>

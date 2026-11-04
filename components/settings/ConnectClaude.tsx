@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useFormat } from "@/lib/data/context";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { Icon } from "@/components/ui/Icon";
@@ -13,14 +13,23 @@ const STEPS = [
   "Send Claude a payment screenshot. It lands in your Inbox to confirm.",
 ];
 
+const noop = () => () => {};
+
 /** Cloud mode only: the connector URL plus every app the user has authorized, with a way to revoke each. */
 export function ConnectClaude() {
-  const url = `${window.location.origin}/api/mcp`;
-  const [copied, setCopied] = useState(false);
+  // window only exists in the browser; the server render leaves the URL empty and the browser fills it in.
+  const origin = useSyncExternalStore(noop, () => window.location.origin, () => "");
+  const url = origin && `${origin}/api/mcp`;
+  const [copied, setCopied] = useState<"yes" | "failed" | false>(false);
 
   async function copy() {
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied("yes");
+    } catch (e) {
+      console.warn("Clipboard write failed", e);
+      setCopied("failed");
+    }
   }
 
   return (
@@ -31,10 +40,10 @@ export function ConnectClaude() {
       </div>
       <div className="card space-y-5 p-5">
         <div className="flex items-center gap-2 rounded-xl bg-raised py-1.5 pr-1.5 pl-3.5">
-          <code className="min-w-0 flex-1 truncate font-mono text-sm">{url}</code>
-          <button type="button" onClick={copy} className="btn btn-primary shrink-0 px-3 py-1.5 text-sm">
-            <Icon name={copied ? "check" : "copy"} size={15} />
-            {copied ? "Copied" : "Copy"}
+          <code className="min-w-0 flex-1 truncate font-mono text-sm select-all">{url}</code>
+          <button type="button" onClick={copy} disabled={!url} className="btn btn-primary shrink-0 px-3 py-1.5 text-sm">
+            <Icon name={copied === "yes" ? "check" : "copy"} size={15} />
+            {copied === "yes" ? "Copied" : copied === "failed" ? "Select and copy" : "Copy"}
           </button>
         </div>
         <ol className="space-y-2.5 text-sm">
@@ -61,7 +70,7 @@ function ConnectedApps() {
     queryFn: async () => {
       const { data, error } = await supabaseBrowser().auth.oauth.listGrants();
       if (error) throw error;
-      return data ?? [];
+      return Array.isArray(data) ? data : [];
     },
   });
 
