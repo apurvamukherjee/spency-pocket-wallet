@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useMemo } from "react";
+import type { Summary } from "@/lib/engine/derive";
 import { monthOf, todayIn } from "@/lib/engine/dates";
 import { type SpencyData, summarize } from "@/lib/engine/derive";
 import { makeFormatters } from "@/lib/format";
@@ -42,20 +43,32 @@ export function useHasCurrentPlan(): boolean {
   return plan !== null && plan.month === monthOf(today);
 }
 
+// Derived values are cached per AppData snapshot (a new object after every change), so the many components that
+// read them share one computation instead of each re-running the engine.
+const engineCache = new WeakMap<AppData, SpencyData>();
+const summaryCache = new WeakMap<SpencyData, { today: string; summary: Summary }>();
+
 /** Engine input. Only call below the plan gate, which guarantees a plan exists. */
 export function useData(): SpencyData {
-  const { plan, profile, envelopes, commitments, txns } = useAppData();
+  const d = useAppData();
+  const { plan, profile, envelopes, commitments, txns } = d;
   if (!plan) throw new NoDataError("useData called before a month plan exists");
-  return useMemo(
-    () => ({ plan: enginePlan(plan, profile), envelopes, commitments, txns }),
-    [plan, profile, envelopes, commitments, txns],
-  );
+  let data = engineCache.get(d);
+  if (!data) {
+    data = { plan: enginePlan(plan, profile), envelopes, commitments, txns };
+    engineCache.set(d, data);
+  }
+  return data;
 }
 
-export function useSummary() {
+export function useSummary(): Summary {
   const data = useData();
   const today = useToday();
-  return useMemo(() => summarize(data, today), [data, today]);
+  const hit = summaryCache.get(data);
+  if (hit && hit.today === today) return hit.summary;
+  const summary = summarize(data, today);
+  summaryCache.set(data, { today, summary });
+  return summary;
 }
 
 export function useFormat() {

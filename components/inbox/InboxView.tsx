@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import { useActions, useAppData, useFormat, useToday } from "@/lib/data/context";
 import { categoryLabel } from "@/lib/data/category";
 import { findDuplicate } from "@/lib/engine/inbox";
@@ -9,12 +8,21 @@ import { useUI } from "@/lib/ui";
 import { Icon } from "@/components/ui/Icon";
 import { SwipeCard } from "./SwipeCard";
 
-function usePending() {
+type PendingItem = { txn: Txn; duplicateOf: Txn | undefined };
+// The panel, the list and the page header all ask; the duplicate scan runs once per transactions list.
+const pendingCache = new WeakMap<Txn[], PendingItem[]>();
+
+function usePending(): PendingItem[] {
   const { txns } = useAppData();
-  return useMemo(() => {
-    const pending = txns.filter((t) => t.status === "pending").sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
-    return pending.map((t) => ({ txn: t, duplicateOf: findDuplicate(t, txns) }));
-  }, [txns]);
+  let items = pendingCache.get(txns);
+  if (!items) {
+    items = txns
+      .filter((t) => t.status === "pending")
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+      .map((t) => ({ txn: t, duplicateOf: findDuplicate(t, txns) }));
+    pendingCache.set(txns, items);
+  }
+  return items;
 }
 
 export function InboxView() {
