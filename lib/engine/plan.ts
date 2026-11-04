@@ -1,10 +1,20 @@
-import { addDays, addMonths, monthEnd, monthOf, monthStart, overlapDays, toLocalDate, weekStartOf } from "./dates";
+import { addDays, addMonths, overlapDays, type Period, periodContaining, periodOfKey, toLocalDate, weekStartOf } from "./dates";
 import { unitOf } from "./money";
 import type { Commitment, Envelope, ISODate, MonthPlan, Minor } from "./types";
 
-/** The part of the month the plan covers: from the day balances were entered to month end. */
+/** The plan's whole month: a calendar month, or payday to payday. */
+export function planPeriod(plan: Pick<MonthPlan, "month" | "startDay">): Period {
+  return periodOfKey(plan.month, plan.startDay ?? 1);
+}
+
+/** Whether `today` falls in this plan's month; if not, it's time for a new plan. */
+export function isCurrentPlan(plan: Pick<MonthPlan, "month" | "startDay">, today: ISODate): boolean {
+  return periodContaining(today, plan.startDay ?? 1).key === plan.month;
+}
+
+/** The part of the month the plan covers: from the day balances were entered to the month's last day. */
 export function planWindow(plan: MonthPlan): { start: ISODate; end: ISODate } {
-  return { start: toLocalDate(plan.balanceAt, plan.timeZone), end: monthEnd(plan.month) };
+  return { start: toLocalDate(plan.balanceAt, plan.timeZone), end: planPeriod(plan).end };
 }
 
 export function salaryInPlan(plan: MonthPlan): Minor {
@@ -62,7 +72,7 @@ export function monthlyEquivalent(c: Commitment): Minor {
 
 /** Where a bill's dues are counted from: the plan start, or the 1st if the user said an earlier payment is still unpaid. */
 export function billFrom(plan: MonthPlan, c: Commitment): ISODate {
-  return plan.unpaidBills?.includes(c.id) ? monthStart(plan.month) : planWindow(plan).start;
+  return plan.unpaidBills?.includes(c.id) ? planPeriod(plan).start : planWindow(plan).start;
 }
 
 /** Yearly bills are saved for monthly, so the month they fall due isn't hit with the whole amount. */
@@ -95,7 +105,8 @@ export function billFund(plan: MonthPlan, c: Commitment): BillFund {
   const saved = plan.billFunds?.[c.id] ?? 0;
   const goal = c.amount * Math.max(1, dueNow.length);
   const missing = Math.max(0, goal - saved);
-  const months = Math.max(1, monthIndex(monthOf(dueDate)) - monthIndex(plan.month) + 1);
+  // Plan months between now and the due date, counting both (period keys are months, so they subtract cleanly).
+  const months = Math.max(1, monthIndex(periodContaining(dueDate, plan.startDay ?? 1).key) - monthIndex(plan.month) + 1);
   const contribution = dueNow.length ? missing : Math.min(missing, Math.ceil(missing / months / unit) * unit);
   return { saved, contribution, dueDate, dueThisMonth: dueNow.length > 0, goal };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { billFundsAtEnd, billStatus, catchUp, summarize, type SpencyData, walletBalances } from "./derive";
 import { major as rupees } from "./money";
+import { isCurrentPlan } from "./plan";
 import type { Envelope, Txn } from "./types";
 
 let seq = 0;
@@ -337,5 +338,33 @@ describe("catchUp", () => {
       gap: rupees(10000),
       shortBy: rupees(6000),
     });
+  });
+});
+
+describe("payday-to-payday months", () => {
+  // Paid on the 25th: the month runs 25 Oct – 24 Nov and is keyed by the month it ends in.
+  const payday = (over: Partial<SpencyData["plan"]> = {}) =>
+    base({ plan: { ...base().plan, month: "2026-11", startDay: 25, balanceAt: "2026-10-25T09:00:00+05:30", ...over } });
+
+  it("covers 25th to 24th and still lands on target", () => {
+    for (const day of ["2026-10-25", "2026-10-31", "2026-11-01", "2026-11-24"]) {
+      expect(summarize(payday(), day).projected).toBe(rupees(70000));
+    }
+    const s = summarize(payday(), "2026-11-10");
+    expect(s.weeks[0].start).toBe("2026-10-19");
+    expect(s.weeks.at(-1)?.start).toBe("2026-11-09");
+  });
+
+  it("counts bills due across both calendar months", () => {
+    // Netflix on the 15th falls on 15 Nov, inside 25 Oct – 24 Nov.
+    expect(summarize(payday(), "2026-10-26").commitmentsRemaining).toBe(rupees(649));
+  });
+
+  it("knows when the month is over", () => {
+    const { plan } = payday();
+    expect(isCurrentPlan(plan, "2026-11-24")).toBe(true);
+    expect(isCurrentPlan(plan, "2026-11-25")).toBe(false);
+    expect(isCurrentPlan(base().plan, "2026-11-30")).toBe(true);
+    expect(isCurrentPlan(base().plan, "2026-12-01")).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { addDays, diffDays, monthStart, toLocalDate } from "./dates";
+import { addDays, diffDays, toLocalDate } from "./dates";
 import { floorToUnit, unitOf } from "./money";
 import {
   billFrom,
@@ -6,6 +6,7 @@ import {
   commitmentDates,
   commitmentsInPlan,
   flexBudget,
+  planPeriod,
   planWindow,
   salaryInPlan,
   saveMonthly,
@@ -122,7 +123,8 @@ export function billStatus(plan: MonthPlan, c: Commitment, txns: Txn[]): BillSta
   const owed = c.amount * commitmentDates(c, billFrom(plan, c), end).length;
   const payments = txns.filter((t) => confirmedAfter(plan, t) && t.commitmentId === c.id && inRange(plan, t, start, end));
   const due = Math.max(0, owed - payments.reduce((s, t) => s - signed(t), 0));
-  const before = start > monthStart(plan.month) ? commitmentDates(c, monthStart(plan.month), addDays(start, -1)).length > 0 : false;
+  const periodStart = planPeriod(plan).start;
+  const before = start > periodStart ? commitmentDates(c, periodStart, addDays(start, -1)).length > 0 : false;
   const assumed = before && !plan.unpaidBills?.includes(c.id);
   const state = due > 0 ? "due" : payments.length ? "paid" : assumed ? "assumed_paid" : "none";
   return { state, due, paymentIds: payments.map((t) => t.id) };

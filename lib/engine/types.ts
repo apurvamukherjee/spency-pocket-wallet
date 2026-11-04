@@ -55,7 +55,10 @@ export type Commitment = {
 };
 
 export type MonthPlan = {
+  /** The period's key: the month it ends in (see periodContaining). */
   month: MonthKey;
+  /** Day of the month the period starts on: 1 = calendar month, e.g. 25 for paid on the 25th. Default 1. */
+  startDay?: number;
   /** ISO 4217, e.g. "INR", "USD". Decides the minor unit used for rounding. */
   currency: string;
   /** IANA zone, e.g. "Asia/Kolkata". Decides which calendar day a payment falls on. */
