@@ -9,7 +9,8 @@ const A = "11111111-1111-1111-1111-111111111111";
 const B = "22222222-2222-2222-2222-222222222222";
 const ENV_A = "aaaaaaaa-0000-0000-0000-000000000001";
 const BILL_A = "aaaaaaaa-0000-0000-0000-000000000002";
-const TABLES = ["profiles", "month_plans", "envelopes", "commitments", "transactions", "merchant_memory", "reconcile_checks"];
+const ACC_A = "aaaaaaaa-0000-0000-0000-000000000003";
+const TABLES = ["profiles", "month_plans", "accounts", "envelopes", "commitments", "transactions", "merchant_memory", "reconcile_checks"];
 
 const db = new PGlite();
 
@@ -46,6 +47,7 @@ beforeAll(async () => {
     db.exec(`
       insert into month_plans (month, opening_bank, balance_at, target) values ('2026-11', 8000000, now(), 7000000);
       insert into envelopes (id, name, weekly_limit) values ('${ENV_A}', 'Groceries', 50000);
+      insert into accounts (id, name) values ('${ACC_A}', 'Savings');
       insert into commitments (id, name, amount, frequency, next_debit) values ('${BILL_A}', 'Rent', 1800000, 'monthly', '2026-11-05');
       insert into transactions (wallet, amount, direction, merchant, envelope_id, occurred_at, upi_ref) values ('bank', 24900, 'debit', 'Shop', '${ENV_A}', now(), 'REF-1');
       insert into merchant_memory (merchant, envelope_id) values ('shop', '${ENV_A}');
@@ -79,6 +81,7 @@ describe("another user", () => {
     ["insert rows as the owner", `insert into transactions (user_id, wallet, amount, direction, occurred_at) values ('${A}', 'bank', 100, 'debit', now())`],
     ["attach a payment to the owner's envelope", `insert into transactions (wallet, amount, direction, occurred_at, envelope_id) values ('bank', 100, 'debit', now(), '${ENV_A}')`],
     ["attach a payment to the owner's bill", `insert into transactions (wallet, amount, direction, occurred_at, commitment_id) values ('bank', 100, 'debit', now(), '${BILL_A}')`],
+    ["log a payment against the owner's account", `insert into transactions (wallet, amount, direction, occurred_at, account_id) values ('bank', 100, 'debit', now(), '${ACC_A}')`],
     ["point merchant memory at the owner's envelope", `insert into merchant_memory (merchant, envelope_id) values ('x', '${ENV_A}')`],
     ["create profiles", `insert into profiles (id) values ('${B}')`],
     ["point their default envelope at the owner's envelope", `update profiles set default_envelope_id = '${ENV_A}' where id = '${B}'`],
@@ -93,13 +96,14 @@ describe("app_snapshot", () => {
     expect(snap.profile).toMatchObject({ id: A, currency: "EUR" });
     expect(snap.plan).toMatchObject({ month: "2026-11", opening_bank: 8000000 });
     expect(snap.envelopes).toHaveLength(1);
+    expect(snap.accounts).toHaveLength(1);
     expect(snap.transactions).toHaveLength(1);
     expect(snap.reconcile_checks).toHaveLength(1);
   });
 
   it("shows another user nothing of the owner's", async () => {
     const snap = await as(B, async () => (await db.query<{ s: Record<string, unknown> }>("select public.app_snapshot() as s")).rows[0].s);
-    expect(snap).toMatchObject({ plan: null, envelopes: [], commitments: [], transactions: [], merchant_memory: [], reconcile_checks: [] });
+    expect(snap).toMatchObject({ plan: null, accounts: [], envelopes: [], commitments: [], transactions: [], merchant_memory: [], reconcile_checks: [] });
     expect(snap.profile).toMatchObject({ id: B });
   });
 
@@ -155,9 +159,27 @@ describe("integrity", () => {
     });
   });
 
+  it("only lets a move between accounts be a bank transfer", async () => {
+    await as(A, async () => {
+      await expect(
+        db.exec(`insert into transactions (wallet, amount, direction, occurred_at, to_account_id) values ('bank', 1, 'debit', now(), '${ACC_A}')`),
+      ).rejects.toThrow();
+      await expect(
+        db.exec(`insert into transactions (wallet, amount, direction, kind, occurred_at, to_account_id) values ('bank', 1, 'debit', 'transfer', now(), '${ACC_A}')`),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  it("hands a deleted account's payments to the main account", async () => {
+    await as(A, async () => {
+      await db.exec(`delete from accounts where id = '${ACC_A}'`);
+      expect(await count("select count(*) from transactions where to_account_id is not null or account_id is not null")).toBe(0);
+    });
+  });
+
   it("hard reset clears only the caller's data and keeps their profile", async () => {
     await as(A, async () => {
-      for (const t of ["transactions", "merchant_memory", "reconcile_checks", "month_plans", "envelopes", "commitments"]) {
+      for (const t of ["transactions", "merchant_memory", "reconcile_checks", "month_plans", "envelopes", "commitments", "accounts"]) {
         await db.exec(`delete from ${t} where user_id = '${A}'`);
       }
       expect(await count("select (select count(*) from transactions) + (select count(*) from month_plans) + (select count(*) from commitments)")).toBe(0);
