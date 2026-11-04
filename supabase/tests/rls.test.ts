@@ -140,11 +140,18 @@ describe("integrity", () => {
     });
   });
 
-  it("drops a deleted bill from the plan's not-paid-yet list", async () => {
+  it("drops a deleted bill from the plan's not-paid-yet list and its savings", async () => {
     await as(A, async () => {
-      await db.exec(`update month_plans set unpaid_bills = array['${BILL_A}']::uuid[]`);
+      await db.exec(`update month_plans set unpaid_bills = array['${BILL_A}']::uuid[], bill_funds = '{"${BILL_A}": 500, "other": 1}'`);
       await db.exec(`delete from commitments where id = '${BILL_A}'`);
       expect(await count("select cardinality(unpaid_bills) from month_plans")).toBe(0);
+      expect(await count("select (select count(*) from jsonb_object_keys(bill_funds)) from month_plans")).toBe(1);
+    });
+  });
+
+  it("rejects bill savings that aren't an object", async () => {
+    await as(A, async () => {
+      await expect(db.exec("update month_plans set bill_funds = '[]'")).rejects.toThrow();
     });
   });
 

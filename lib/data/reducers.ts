@@ -67,7 +67,11 @@ export const saveCommitment = (d: AppData, c: Commitment): AppData => ({ ...d, c
 export function deleteCommitment(d: AppData, id: string): AppData {
   return {
     ...d,
-    plan: d.plan?.unpaidBills?.includes(id) ? { ...d.plan, unpaidBills: d.plan.unpaidBills.filter((b) => b !== id) } : d.plan,
+    plan: d.plan && {
+      ...d.plan,
+      unpaidBills: (d.plan.unpaidBills ?? []).filter((b) => b !== id),
+      billFunds: Object.fromEntries(Object.entries(d.plan.billFunds ?? {}).filter(([b]) => b !== id)),
+    },
     commitments: d.commitments.filter((c) => c.id !== id),
     txns: d.txns.map((t) => (t.commitmentId === id ? { ...t, commitmentId: null } : t)),
   };

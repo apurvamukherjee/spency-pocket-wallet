@@ -16,7 +16,9 @@ describe("delete reducers mirror the database", () => {
   it("clears the default envelope when it is deleted", () => {
     expect(deleteEnvelope(base, "e1").profile.defaultEnvelopeId).toBeNull();
   });
-  it("drops a deleted bill from the not-paid-yet list", () => {
-    expect(deleteCommitment(base, "b1").plan?.unpaidBills).toEqual(["b2"]);
+  it("drops a deleted bill from the not-paid-yet list and frees its savings", () => {
+    const d = deleteCommitment({ ...base, plan: base.plan && { ...base.plan, billFunds: { b1: 500, b2: 100 } } }, "b1");
+    expect(d.plan?.unpaidBills).toEqual(["b2"]);
+    expect(d.plan?.billFunds).toEqual({ b2: 100 });
   });
 });
