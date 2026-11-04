@@ -3,9 +3,8 @@
 import { useState } from "react";
 import { addDays, dueWhen } from "@/lib/engine/dates";
 import { useActions, useData, useFormat, useSummary } from "@/lib/data/context";
-import { monthOf } from "@/lib/engine/dates";
 import { billStatus, type BillStatus } from "@/lib/engine/derive";
-import { billFund, commitmentDates, monthlyEquivalent, saveMonthly } from "@/lib/engine/plan";
+import { billFund, commitmentDates, monthlyEquivalent, planWindow, saveMonthly } from "@/lib/engine/plan";
 import type { Commitment, Frequency, ISODate } from "@/lib/engine/types";
 import { Icon } from "@/components/ui/Icon";
 import { Segmented } from "@/components/ui/controls";
@@ -21,7 +20,9 @@ export function CommitmentsView() {
   const s = useSummary();
   const fmt = useFormat();
   const [editing, setEditing] = useState<Commitment | "new" | null>(null);
-  const month = monthOf(s.today);
+  // "This month" is the plan's month, which may run payday to payday.
+  const monthEnds = planWindow(plan).end;
+  const laterMonth = (d: ISODate) => d > monthEnds;
   const rows = commitments
     .map((c) => ({ c, next: nextDate(c, s.today), status: billStatus(plan, c, txns) }))
     .sort((a, b) => a.next.localeCompare(b.next));
@@ -106,7 +107,7 @@ export function CommitmentsView() {
                       {status.state === "paid" ? (
                         <>
                           <span className="text-ok">Paid this month</span>
-                          {monthOf(next) !== month && <> · next {fmt.shortDay(next)}</>} ·{" "}
+                          {laterMonth(next) && <> · next {fmt.shortDay(next)}</>} ·{" "}
                         </>
                       ) : status.state === "assumed_paid" ? (
                         <>
@@ -114,7 +115,7 @@ export function CommitmentsView() {
                         </>
                       ) : status.state === "due" ? (
                         <>
-                          {unpaid.includes(c.id) && monthOf(next) !== month ? (
+                          {unpaid.includes(c.id) && laterMonth(next) ? (
                             <span className="text-warn">Not paid yet</span>
                           ) : (
                             <>

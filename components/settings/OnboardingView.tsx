@@ -4,14 +4,14 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { enginePlan, useActions, useAppData, useFormat, useToday } from "@/lib/data/context";
 import type { PlanInput } from "@/lib/data/types";
-import { addMonths, dayInMonth, daysInMonth, monthOf } from "@/lib/engine/dates";
+import { addMonths, dayInMonth, dayInPeriod, diffDays, monthOf, periodContaining } from "@/lib/engine/dates";
 import { unitOf } from "@/lib/engine/money";
 import { billFundsAtEnd } from "@/lib/engine/derive";
-import { flexBudget, spendable } from "@/lib/engine/plan";
+import { flexBudget, isCurrentPlan, spendable } from "@/lib/engine/plan";
 import type { Commitment, Envelope, Minor } from "@/lib/engine/types";
 import { defaultWeekStart } from "@/lib/locale";
 import { Icon } from "@/components/ui/Icon";
-import { Switch } from "@/components/ui/controls";
+import { Segmented, Switch } from "@/components/ui/controls";
 
 type EnvRow = { id: string; name: string; amount: string; on: boolean; locked: boolean; leftover: Envelope["leftover"] };
 /** `original` is set for bills carried over from last month, so weekly and yearly ones keep their real dates. */
@@ -58,6 +58,9 @@ export function OnboardingView() {
   const [target, setTarget] = useState(data.plan ? fmt.input(data.plan.target) : "");
   const [salary, setSalary] = useState(data.plan?.salary ? fmt.input(data.plan.salary.amount) : "");
   const [salaryDay, setSalaryDay] = useState(data.plan?.salary ? String(+data.plan.salary.date.slice(8)) : "");
+  // A month can run 1st to month end, or payday to payday (starting on the day pay usually lands).
+  const [cycle, setCycle] = useState<"calendar" | "payday">((data.plan?.startDay ?? 1) > 1 ? "payday" : "calendar");
+  const [startText, setStartText] = useState(String((data.plan?.startDay ?? 1) > 1 ? data.plan?.startDay : 25));
   const [envs, setEnvs] = useState<EnvRow[] | null>(
     data.envelopes.length
       ? data.envelopes.map((e) => ({ id: e.id, name: e.name, amount: fmt.input(e.weeklyLimit), on: true, locked: e.locked, leftover: e.leftover }))
@@ -82,13 +85,17 @@ export function OnboardingView() {
   const salaryP = fmt.parse(salary);
   const salaryDayN = Number(salaryDay);
   const salaryDayOk = salaryDayN >= 1 && salaryDayN <= 31;
+  const startN = Number(startText);
+  const startOk = cycle === "calendar" || (Number.isInteger(startN) && startN >= 1 && startN <= 31);
+  const startDay = cycle === "calendar" || !startOk ? 1 : startN;
+  const period = periodContaining(today, startDay);
 
   // Yearly-bill savings carry over: from last month's plan as they stood at its end, or unchanged when redoing
   // this month. Derived from that plan and its confirmed payments, so nothing is double counted.
   const carried =
     data.plan === null
       ? {}
-      : data.plan.month === monthOf(today)
+      : isCurrentPlan(data.plan, today)
         ? (data.plan.billFunds ?? {})
         : billFundsAtEnd(enginePlan(data.plan, profile), data.commitments, data.txns);
 
@@ -97,13 +104,15 @@ export function OnboardingView() {
   const plan: PlanInput | null =
     bankP !== null && targetP !== null
       ? {
-          month: monthOf(today),
+          month: period.key,
+          startDay,
           openingBank: bankP,
           openingCash: 0,
           // Preview only; finish() stamps the real moment the balance was entered.
           balanceAt: `${today}T12:00:00Z`,
           target: targetP,
-          salary: salaryP && salaryDayOk ? { amount: salaryP, date: nextOnDay(salaryDayN, today) } : null,
+          // Pay counts only if its day in this month's period is still ahead (salaryInPlan checks).
+          salary: salaryP && salaryDayOk ? { amount: salaryP, date: dayInPeriod(period, salaryDayN) } : null,
           weekStart: data.plan?.weekStart ?? defaultWeekStart(profile.locale),
           billFunds: carried,
         }
@@ -112,7 +121,7 @@ export function OnboardingView() {
   const canSpend = full ? spendable(full) : 0;
 
   // Suggestions scale with what's actually spendable, so they make sense in any currency.
-  const weeklySpend = (canSpend * 7) / daysInMonth(monthOf(today));
+  const weeklySpend = (canSpend * 7) / (diffDays(today, period.end) + 1);
   const rows: EnvRow[] =
     envs ??
     SUGGESTED.map((s) => ({
@@ -147,7 +156,7 @@ export function OnboardingView() {
   const salaryNeedsDay = salary.trim() !== "" && !salaryDayOk;
 
   const flex = full ? flexBudget(full, envelopes, commitments) : 0;
-  const canNext = step === 0 ? plan !== null && canSpend >= 0 && !salaryNeedsDay : step === 1 ? halfEnvs === 0 : true;
+  const canNext = step === 0 ? plan !== null && canSpend >= 0 && !salaryNeedsDay && startOk : step === 1 ? halfEnvs === 0 : true;
 
   async function finish() {
     if (!plan) return;
@@ -190,6 +199,39 @@ export function OnboardingView() {
 
       {step === 0 && (
         <div className="space-y-5">
+          <div className="space-y-2">
+            <span className="label">My month runs</span>
+            <Segmented<"calendar" | "payday">
+              label="My month runs"
+              value={cycle}
+              onChange={(c) => {
+                setCycle(c);
+                if (c === "payday" && salaryDayOk) setStartText(String(salaryDayN));
+              }}
+              options={[
+                { value: "calendar", label: "1st to month end" },
+                { value: "payday", label: "Payday to payday" },
+              ]}
+            />
+            {cycle === "payday" && (
+              <label className="flex items-center gap-3 pt-1 text-sm">
+                <span className="text-muted">Starts on day</span>
+                <input
+                  aria-label="Day the month starts"
+                  className="field w-20 tabular-nums"
+                  inputMode="numeric"
+                  maxLength={2}
+                  value={startText}
+                  onChange={(e) => setStartText(e.target.value.replace(/\D/g, ""))}
+                />
+              </label>
+            )}
+            <p className={`text-xs ${startOk ? "text-faint" : "text-warn"}`}>
+              {startOk
+                ? `This month: ${fmt.shortDay(period.start)} – ${fmt.shortDay(period.end)}.`
+                : "Pick a day from 1 to 31, usually the day your pay lands."}
+            </p>
+          </div>
           <MoneyField
             label="What's in your bank right now?"
             hint="Overdrawn? Put a minus in front, like -2000."
@@ -200,7 +242,7 @@ export function OnboardingView() {
           />
           <MoneyField label="What would you like to end the month with?" symbol={fmt.symbol} value={target} onChange={setTarget} />
           <div className="grid grid-cols-[1fr_6rem] gap-3">
-            <MoneyField label="Pay still coming this month (optional)" symbol={fmt.symbol} value={salary} onChange={setSalary} />
+            <MoneyField label="Pay still coming before month end (optional)" symbol={fmt.symbol} value={salary} onChange={setSalary} />
             <label className="space-y-1.5">
               <span className="label">Pay day</span>
               <input

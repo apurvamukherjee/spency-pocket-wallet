@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useMemo, useState } from "react";
 import { useActions, useAppData, useFormat, useMode, useSignOut, useSummary, useHasCurrentPlan } from "@/lib/data/context";
 import { useDemoStore } from "@/lib/data/demo";
-import { dayInMonth } from "@/lib/engine/dates";
+import { dayInPeriod } from "@/lib/engine/dates";
+import { planPeriod } from "@/lib/engine/plan";
 import { defaultEnvelopeId } from "@/lib/engine/inbox";
 import { unitOf } from "@/lib/engine/money";
 import type { Theme } from "@/lib/data/types";
@@ -248,7 +249,7 @@ function PlanForm() {
       // Re-baselining only when a balance was edited: they're true as of now, so earlier payments are inside them.
       ...(rebase ? { openingBank: p.bank, openingCash: p.cash, balanceAt: new Date().toISOString() } : {}),
       target: p.target,
-      salary: p.salary && dayOk && plan ? { amount: p.salary, date: dayInMonth(plan.month, day) } : null,
+      salary: p.salary && dayOk && plan ? { amount: p.salary, date: dayInPeriod(planPeriod(plan), day) } : null,
       weekStart: Number(weekStart),
     });
     setBank(null);
@@ -286,6 +287,15 @@ function PlanForm() {
           <span className="label">Weeks start on</span>
           <Segmented<WeekStartValue> label="Week start" value={weekStart} onChange={edit(setWeekStart)} options={[...WEEK_STARTS]} />
         </div>
+        {plan && (
+          <p className="text-sm text-muted">
+            This month runs {fmt.shortDay(planPeriod(plan).start)} – {fmt.shortDay(planPeriod(plan).end)}
+            {(plan.startDay ?? 1) > 1 ? ", payday to payday" : ""}.{" "}
+            <Link href="/onboarding" className="text-fg underline underline-offset-4">
+              Change how months run
+            </Link>
+          </p>
+        )}
         <p className="text-sm text-muted">
           {rebase
             ? "Saving makes these balances your new starting point, as of right now."
