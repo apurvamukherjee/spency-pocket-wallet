@@ -5,7 +5,7 @@ import { catchUp, type Summary } from "@/lib/engine/derive";
 import { findDuplicate, type MerchantMemory, recallEnvelope } from "@/lib/engine/inbox";
 import type { FormatMoney } from "@/lib/engine/money";
 import { coverLine, describeSettlement, type SettlementStatus } from "@/lib/engine/settle";
-import type { Commitment, Envelope, Minor, Txn, Wallet } from "@/lib/engine/types";
+import type { Account, Commitment, Envelope, Minor, Txn, Wallet } from "@/lib/engine/types";
 
 // Pure helpers behind the MCP tools: no I/O, so they're unit-tested like the engine.
 
@@ -92,12 +92,31 @@ export function beforePlanNote(occurredAt: string, planStart: string | null): st
   return `Dated before this month's plan started (${planStart.slice(0, 10)}), so it's on record but doesn't change balances: the starting balance already included it.`;
 }
 
+/**
+ * A bank account by name (case-insensitive, exact first, then partial). The main account is stored as null, like
+ * payments that name no account. Unknown names list the real ones so Claude can ask.
+ */
+export function findAccount(accounts: Account[], name: string): string | null {
+  const n = name.trim().toLowerCase();
+  const hit = accounts.find((a) => a.name.toLowerCase() === n) ?? accounts.find((a) => a.name.toLowerCase().includes(n));
+  if (!hit) {
+    throw new ToolInputError(
+      accounts.length > 1
+        ? `No account called "${name}". The user's accounts are: ${accounts.map((a) => a.name).join(", ")}.`
+        : "The user has a single bank account; leave account out.",
+    );
+  }
+  return hit.id === accounts[0].id ? null : hit.id;
+}
+
 export type TxnInput = {
   amount: number | string;
   merchant: string;
   occurred_at?: string;
   reference?: string;
   wallet?: Wallet;
+  /** Bank account name when the user has several; default the main account. */
+  account?: string;
   direction?: "debit" | "credit";
   suggested_category?: string;
   note?: string;
@@ -113,7 +132,7 @@ export type ImportPlan = {
  * (same reference, or same merchant + amount within 2 minutes) and of earlier items in the same batch.
  */
 export function planImport(
-  d: Pick<AppData, "envelopes" | "memory" | "txns" | "commitments"> & { defaultEnvelopeId: string | null },
+  d: Pick<AppData, "envelopes" | "memory" | "txns" | "commitments"> & { defaultEnvelopeId: string | null; accounts?: Account[] },
   inputs: TxnInput[],
   unit: number,
   now: string,
@@ -137,6 +156,8 @@ export function planImport(
       continue;
     }
     const credit = input.direction === "credit";
+    const wallet = input.wallet ?? "bank";
+    const accountId = wallet === "bank" && input.account?.trim() ? findAccount(d.accounts ?? [], input.account) : null;
     const found = resolveCategory(d.envelopes, d.memory, merchant, input.suggested_category, {
       bills: d.commitments,
       fallback: d.defaultEnvelopeId,
@@ -147,7 +168,8 @@ export function planImport(
     const category = credit && !refund ? { envelopeId: null, commitmentId: null, via: found.via } : found;
     const txn: Txn = {
       id: newId(),
-      wallet: input.wallet ?? "bank",
+      wallet,
+      accountId,
       amount,
       direction: credit ? "credit" : "debit",
       kind: credit && !refund ? "income" : "expense",
@@ -229,13 +251,18 @@ export function summaryPayload(
   };
 }
 
-export function txnPayload(t: Txn, envelopes: Envelope[], bills: Commitment[], money: FormatMoney) {
+export function txnPayload(t: Txn, envelopes: Envelope[], bills: Commitment[], money: FormatMoney, accounts: Account[] = []) {
+  const name = (id: string | null | undefined) => (accounts.length > 1 ? (accounts.find((a) => a.id === id) ?? accounts[0]).name : null);
+  const account = t.wallet === "bank" ? name(t.accountId) : null;
+  const to = t.toAccountId ? name(t.toAccountId) : null;
   return {
     id: t.id,
     merchant: t.merchant,
     amount: money(t.direction === "credit" ? t.amount : -t.amount),
     category: categoryLabel(envelopes, bills, t),
     wallet: t.wallet,
+    ...(account ? { account } : {}),
+    ...(to ? { moved_to: to } : {}),
     occurred_at: t.occurredAt,
     status: t.status,
     ...(t.upiRef ? { reference: t.upiRef } : {}),

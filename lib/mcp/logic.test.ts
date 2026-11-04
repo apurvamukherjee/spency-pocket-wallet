@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { rememberMerchant } from "@/lib/engine/inbox";
 import type { Envelope, Txn } from "@/lib/engine/types";
-import { beforePlanNote, categoryByName, planImport, resolveCategory, toMinor, ToolInputError, toSignedMinor } from "./logic";
+import { beforePlanNote, categoryByName, findAccount, planImport, resolveCategory, toMinor, ToolInputError, toSignedMinor } from "./logic";
 
 const env = (id: string, name: string): Envelope => ({ id, name, weeklyLimit: 50000, locked: false, leftover: "rollover" });
 const envelopes = [env("g", "Groceries"), env("e", "Eating out"), env("s", "Small stuff")];
@@ -143,5 +143,24 @@ describe("toSignedMinor", () => {
     expect(toSignedMinor("₹0.00", 100)).toBe(0);
     expect(toSignedMinor("1500", 100)).toBe(150000);
     expect(() => toSignedMinor("abc", 100)).toThrow(ToolInputError);
+  });
+});
+
+describe("bank accounts", () => {
+  const accounts = [
+    { id: "m", name: "HDFC" },
+    { id: "s", name: "SBI Savings" },
+  ];
+
+  it("finds an account by name; the main one is stored as null", () => {
+    expect(findAccount(accounts, "sbi")).toBe("s");
+    expect(findAccount(accounts, "hdfc")).toBeNull();
+    expect(() => findAccount(accounts, "Axis")).toThrow(/HDFC, SBI Savings/);
+  });
+
+  it("files Claude's payments under the named account", () => {
+    const d = { envelopes: [], commitments: [], memory: {}, txns: [], defaultEnvelopeId: null, accounts };
+    const plan = planImport(d, [{ amount: 100, merchant: "Shop", account: "SBI Savings" }, { amount: 50, merchant: "Cafe", wallet: "cash", account: "SBI" }], 100, "2026-11-03T00:00:00Z", () => "x");
+    expect(plan.add.map((a) => a.txn.accountId)).toEqual(["s", null]);
   });
 });
