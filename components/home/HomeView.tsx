@@ -82,6 +82,14 @@ export function HomeView() {
           <Stat label="Bills due" value={fmt.money(s.commitmentsRemaining)} note={nextLine} />
           <Stat label="Bonus saved" value={fmt.money(s.bonusSaved)} />
         </dl>
+        {s.billSavings > 0 && (
+          <p className="mt-3 text-xs text-muted">
+            Your bank will also hold {fmt.money(s.billSavings)} for yearly bills.{" "}
+            <Link href="/commitments" className="underline underline-offset-4 hover:text-fg">
+              See bills
+            </Link>
+          </p>
+        )}
       </section>
 
       <RebalanceCard />

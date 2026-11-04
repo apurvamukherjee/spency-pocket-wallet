@@ -6,6 +6,7 @@ import { enginePlan, useActions, useAppData, useFormat, useToday } from "@/lib/d
 import type { PlanInput } from "@/lib/data/types";
 import { addMonths, dayInMonth, daysInMonth, monthOf } from "@/lib/engine/dates";
 import { unitOf } from "@/lib/engine/money";
+import { billFundsAtEnd } from "@/lib/engine/derive";
 import { flexBudget, spendable } from "@/lib/engine/plan";
 import type { Commitment, Envelope, Minor } from "@/lib/engine/types";
 import { defaultWeekStart } from "@/lib/locale";
@@ -81,6 +82,17 @@ export function OnboardingView() {
   const salaryDayN = Number(salaryDay);
   const salaryDayOk = salaryDayN >= 1 && salaryDayN <= 31;
 
+  // Yearly-bill savings carry over: from last month's plan as they stood at its end, or unchanged when redoing
+  // this month. Derived from that plan and its confirmed payments, so nothing is double counted.
+  const carried =
+    data.plan === null
+      ? {}
+      : data.plan.month === monthOf(today)
+        ? (data.plan.billFunds ?? {})
+        : billFundsAtEnd(enginePlan(data.plan, profile), data.commitments, data.txns);
+
+  const carriedTotal = Object.values(carried).reduce((s, v) => s + v, 0);
+
   const plan: PlanInput | null =
     bankP !== null && targetP !== null
       ? {
@@ -92,6 +104,7 @@ export function OnboardingView() {
           target: targetP,
           salary: salaryP && salaryDayOk ? { amount: salaryP, date: nextOnDay(salaryDayN, today) } : null,
           weekStart: data.plan?.weekStart ?? defaultWeekStart(profile.locale),
+          billFunds: carried,
         }
       : null;
   const full = plan && enginePlan({ ...plan, id: "draft" }, profile);
@@ -142,7 +155,11 @@ export function OnboardingView() {
     try {
       // Suggested rows use their name as a placeholder id until saved.
       const ids = envelopes.map((e) => (SUGGESTED.some((s) => s.name === e.id) ? { ...e, id: crypto.randomUUID() } : e));
-      await startMonth({ ...plan, balanceAt: new Date().toISOString() }, ids, commitments);
+      // Savings only stay with yearly bills that are kept; anything else is spendable again.
+      const billFunds = Object.fromEntries(
+        Object.entries(carried).filter(([id]) => commitments.some((c) => c.id === id && c.frequency === "yearly")),
+      );
+      await startMonth({ ...plan, balanceAt: new Date().toISOString(), billFunds }, ids, commitments);
       router.push("/");
     } catch (e) {
       console.error(e);
@@ -192,7 +209,9 @@ export function OnboardingView() {
           {plan && (
             <p className={`text-sm ${canSpend >= 0 ? "text-muted" : "text-warn"}`}>
               {canSpend >= 0
-                ? `That gives you ${fmt.money(canSpend)} to work with this month.`
+                ? `That gives you ${fmt.money(canSpend)} to work with this month.${
+                    carriedTotal > 0 ? ` ${fmt.money(carriedTotal)} of your balance is already put aside for yearly bills.` : ""
+                  }`
                 : "Your target is above what you'll have. Try a lower target."}
             </p>
           )}

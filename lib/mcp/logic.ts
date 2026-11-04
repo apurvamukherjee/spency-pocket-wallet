@@ -177,6 +177,8 @@ export function summaryPayload(s: Summary, d: Pick<AppData, "envelopes" | "txns"
     })),
     flex_left: money(Math.max(0, s.flexLeft)),
     bills_still_due_this_month: money(s.commitmentsRemaining),
+    // Held in the bank for yearly bills that aren't due yet; not spendable, not part of the target.
+    set_aside_for_yearly_bills: money(s.billSavings),
     projected_month_end: money(s.projected),
     target_month_end: money(s.target),
     on_track_for_target: s.projected >= s.target,
