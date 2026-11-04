@@ -7,6 +7,7 @@ import { useActions, useAppData, useFormat, useMode, useSignOut, useSummary, use
 import { useDemoStore } from "@/lib/data/demo";
 import { dayInMonth } from "@/lib/engine/dates";
 import { defaultEnvelopeId } from "@/lib/engine/inbox";
+import { unitOf } from "@/lib/engine/money";
 import type { Theme } from "@/lib/data/types";
 import { currencyOptions, localeOptions, timeZoneOptions } from "@/lib/locale";
 import { supabaseConfigured } from "@/lib/supabase/env";
@@ -92,8 +93,24 @@ function Select({ label, value, onChange, children }: { label: string; value: st
 }
 
 function Preferences() {
-  const { profile } = useAppData();
+  const { profile, plan, txns, envelopes, commitments } = useAppData();
   const { updateProfile } = useActions();
+  const [currencyBlocked, setCurrencyBlocked] = useState<string | null>(null);
+  const hasMoney = plan !== null || txns.length > 0 || envelopes.length > 0 || commitments.length > 0;
+
+  /**
+   * Amounts are stored in the currency's smallest unit. Between currencies with the same number of decimals a
+   * switch is a harmless relabel; between different ones (rupees have 2, yen 0) every amount would be off by
+   * 100×, so it's blocked while there's data.
+   */
+  function setCurrency(currency: string) {
+    if (hasMoney && unitOf(currency) !== unitOf(profile.currency)) {
+      setCurrencyBlocked(currency);
+      return;
+    }
+    setCurrencyBlocked(null);
+    updateProfile({ currency });
+  }
   const currencies = useMemo(() => currencyOptions(profile.locale), [profile.locale]);
   const locales = useMemo(() => localeOptions(profile.locale, profile.locale), [profile.locale]);
   const zones = useMemo(() => timeZoneOptions(profile.timeZone), [profile.timeZone]);
@@ -119,7 +136,7 @@ function Preferences() {
 
       <Section title="Region" hint="How money, dates and weeks look to you.">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Select label="Currency" value={profile.currency} onChange={(currency) => updateProfile({ currency })}>
+          <Select label="Currency" value={profile.currency} onChange={setCurrency}>
             {currencies.map((c) => (
               <option key={c.value} value={c.value}>
                 {c.label}
@@ -143,7 +160,14 @@ function Preferences() {
             </Select>
           </div>
         </div>
-        <p className="text-xs text-faint">Switching currency relabels your amounts; it doesn&apos;t convert them.</p>
+        {currencyBlocked ? (
+          <p role="alert" className="text-sm text-warn">
+            {currencyBlocked} uses a different number of decimal places from {profile.currency}, so your amounts would come out wrong.
+            To switch, use Start fresh below first, then pick {currencyBlocked}.
+          </p>
+        ) : (
+          <p className="text-xs text-faint">Switching currency relabels your amounts; it doesn&apos;t convert them.</p>
+        )}
       </Section>
 
       <Sorting />
