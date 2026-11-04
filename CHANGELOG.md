@@ -12,6 +12,14 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 - Bills: tick a bill to mark it paid this month (logs the payment so balances stay right), untick to undo, or untick a bill Spency assumed was paid to say it hasn't gone out yet (the money is set aside again). Needs the new `unpaid_bills` migration.
 - Claude can correct the past: `update_transaction`, `remove_transaction`, `update_commitment`, `remove_commitment`, `remove_envelope` and `update_plan`. Payments dated before the plan's starting balance are flagged so Claude can explain they don't change balances. Confirming new payments stays in the app.
 
+### Performance
+- The first page load arrives with your numbers already in it: the server loads your month while rendering, behind an instant skeleton, instead of the browser fetching after it starts. Switching tabs makes no data requests.
+- A month loads in one database request (`app_snapshot()`) instead of seven in two waves. It also lifts the 1,000-transaction cap. Needs the `app_snapshot` migration; until then the app uses the old queries.
+- Saving no longer reloads the whole month; only a failed save reloads to roll back.
+- Payments Claude adds appear without a refresh, through Supabase Realtime. Needs the `realtime` migration.
+- The budget summary and the Inbox duplicate check are computed once per change instead of once per component.
+- One webfont instead of two.
+
 ### Fixed
 - Saving the plan in Settings re-baselined on the balance from when the page opened, dropping any payment confirmed in the meantime. Balances now follow live figures and only an edited balance re-baselines.
 - Starting a new month moved carried-over weekly and yearly bills onto a day this month. They keep their dates unless you change the day.
