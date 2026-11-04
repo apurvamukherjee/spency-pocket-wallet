@@ -55,6 +55,10 @@ export function OnboardingView() {
 
   const [step, setStep] = useState(0);
   const [bank, setBank] = useState("");
+  // With several accounts, one balance each; the plan's bank figure is their total.
+  const accounts = data.accounts;
+  const several = accounts.length > 1;
+  const [accBank, setAccBank] = useState<Record<string, string>>({});
   const [target, setTarget] = useState(data.plan ? fmt.input(data.plan.target) : "");
   const [salary, setSalary] = useState(data.plan?.salary ? fmt.input(data.plan.salary.amount) : "");
   const [salaryDay, setSalaryDay] = useState(data.plan?.salary ? String(+data.plan.salary.date.slice(8)) : "");
@@ -80,7 +84,12 @@ export function OnboardingView() {
   const [error, setError] = useState<string | null>(null);
 
   // Either can be below zero: an overdrawn account, or a target that pays an overdraft down.
-  const bankP = fmt.parseSigned(bank);
+  const accParsed = accounts.map((a) => fmt.parseSigned(accBank[a.id] ?? ""));
+  const bankP = several
+    ? accParsed.every((v) => v !== null)
+      ? accParsed.reduce<number>((t, v) => t + (v ?? 0), 0)
+      : null
+    : fmt.parseSigned(bank);
   const targetP = fmt.parseSigned(target);
   const salaryP = fmt.parse(salary);
   const salaryDayN = Number(salaryDay);
@@ -107,6 +116,8 @@ export function OnboardingView() {
           month: period.key,
           startDay,
           openingBank: bankP,
+          // The main account holds the rest, so only the others are stored.
+          openingAccounts: several ? Object.fromEntries(accounts.slice(1).map((a, i) => [a.id, accParsed[i + 1] ?? 0])) : {},
           openingCash: 0,
           // Preview only; finish() stamps the real moment the balance was entered.
           balanceAt: `${today}T12:00:00Z`,
@@ -232,14 +243,31 @@ export function OnboardingView() {
                 : "Pick a day from 1 to 31, usually the day your pay lands."}
             </p>
           </div>
-          <MoneyField
-            label="What's in your bank right now?"
-            hint="Overdrawn? Put a minus in front, like -2000."
-            symbol={fmt.symbol}
-            value={bank}
-            onChange={setBank}
-            autoFocus
-          />
+          {several ? (
+            <div className="space-y-3">
+              <p className="label">What&apos;s in each account right now?</p>
+              {accounts.map((a, i) => (
+                <MoneyField
+                  key={a.id}
+                  label={a.name}
+                  symbol={fmt.symbol}
+                  value={accBank[a.id] ?? ""}
+                  onChange={(v) => setAccBank({ ...accBank, [a.id]: v })}
+                  autoFocus={i === 0}
+                />
+              ))}
+              <p className="text-xs text-faint">Overdrawn? Put a minus in front, like -2000.</p>
+            </div>
+          ) : (
+            <MoneyField
+              label="What's in your bank right now?"
+              hint="Overdrawn? Put a minus in front, like -2000."
+              symbol={fmt.symbol}
+              value={bank}
+              onChange={setBank}
+              autoFocus
+            />
+          )}
           <MoneyField label="What would you like to end the month with?" symbol={fmt.symbol} value={target} onChange={setTarget} />
           <div className="grid grid-cols-[1fr_6rem] gap-3">
             <MoneyField label="Pay still to come (optional)" symbol={fmt.symbol} value={salary} onChange={setSalary} />

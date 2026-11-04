@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { useActions, useAppData, useFormat, useSummary } from "@/lib/data/context";
+import { useMemo, useState } from "react";
+import { useActions, useAppData, useData, useFormat, useSummary } from "@/lib/data/context";
 import { addDays } from "@/lib/engine/dates";
+import { accountBalances } from "@/lib/engine/derive";
 import { type ReconcileCheck, reconcileGap, reconcileStreak } from "@/lib/engine/reconcile";
 import { Icon } from "@/components/ui/Icon";
 
-type Result = { actual: number; gap: number; done: ReconcileCheck["resolution"] | null };
+/** gaps: per account (id null = the single or main account), so adjustments land where the difference is. */
+type Result = {
+  actual: number;
+  gap: number;
+  gaps: { accountId: string | null; name: string | null; gap: number }[];
+  done: ReconcileCheck["resolution"] | null;
+};
 
 const RESOLUTION_LABEL: Record<ReconcileCheck["resolution"], string> = {
   matched: "All square",
@@ -16,10 +23,20 @@ const RESOLUTION_LABEL: Record<ReconcileCheck["resolution"], string> = {
 
 export function ReconcileView() {
   const s = useSummary();
-  const { checks } = useAppData();
-  const { recordCheck, addTxn } = useActions();
+  const { checks, accounts } = useAppData();
   const fmt = useFormat();
   const [text, setText] = useState("");
+  const data = useData();
+  const live = useMemo(() => accountBalances(data.plan, accounts, data.txns), [data, accounts]);
+  const several = live.length > 1;
+  const [texts, setTexts] = useState<Record<string, string>>({});
+  const parsedAll = live.map((a) => fmt.parseSigned(texts[a.id] ?? ""));
+  const actualTotal = several
+    ? parsedAll.every((v) => v !== null)
+      ? parsedAll.reduce<number>((t, v) => t + (v ?? 0), 0)
+      : null
+    : fmt.parseSigned(text);
+  const { recordCheck, addTxn } = useActions();
   const [result, setResult] = useState<Result | null>(null);
   const [copied, setCopied] = useState<"yes" | "failed" | false>(false);
   const streak = reconcileStreak(checks, s.today);
@@ -33,29 +50,40 @@ export function ReconcileView() {
 
   function check(e: React.FormEvent) {
     e.preventDefault();
-    const actual = fmt.parseSigned(text);
+    const actual = actualTotal;
     if (actual === null) return;
-    const r: Result = { actual, gap: reconcileGap(s.bank, actual), done: null };
+    const gaps = several
+      ? live.map((a, i) => ({ accountId: i === 0 ? null : a.id, name: a.name, gap: reconcileGap(a.balance, parsedAll[i] ?? 0) }))
+      : [{ accountId: null, name: null, gap: reconcileGap(s.bank, actual) }];
+    const r: Result = { actual, gap: reconcileGap(s.bank, actual), gaps: gaps.filter((g) => g.gap !== 0), done: null };
     setCopied(false);
-    if (r.gap === 0) resolve("matched", r);
+    if (r.gaps.length === 0) resolve("matched", r);
     else setResult(r);
   }
 
   function logAdjustment(r: Result) {
-    addTxn({
-      amount: Math.abs(r.gap),
-      direction: r.gap < 0 ? "debit" : "credit",
-      kind: "adjustment",
-      wallet: "bank",
-      merchant: "Reconciliation adjustment",
-      envelopeId: null,
-      occurredAt: new Date().toISOString(),
-    });
+    // One adjustment per account that's off, so each account's balance comes out right too.
+    for (const g of r.gaps) {
+      addTxn({
+        amount: Math.abs(g.gap),
+        direction: g.gap < 0 ? "debit" : "credit",
+        kind: "adjustment",
+        wallet: "bank",
+        accountId: g.accountId,
+        merchant: "Reconciliation adjustment",
+        envelopeId: null,
+        occurredAt: new Date().toISOString(),
+      });
+    }
     resolve("adjusted", r);
   }
 
   async function askClaude(r: Result) {
-    const prompt = `My Spency bank balance is ${fmt.money(Math.abs(r.gap))} ${r.gap < 0 ? "higher" : "lower"} than my real bank balance. Can you help me find the payment I haven't logged? I'll share my recent payment screenshots.`;
+    const where = r.gaps
+      .filter((g) => g.name)
+      .map((g) => `${g.name}: Spency is ${fmt.money(Math.abs(g.gap))} ${g.gap < 0 ? "higher" : "lower"}`)
+      .join("; ");
+    const prompt = `My Spency bank balance is ${fmt.money(Math.abs(r.gap))} ${r.gap < 0 ? "higher" : "lower"} than my real bank balance${where ? ` (${where})` : ""}. Can you help me find the payment I haven't logged? I'll share my recent payment screenshots.`;
     try {
       await navigator.clipboard.writeText(prompt);
       setCopied("yes");
@@ -85,27 +113,54 @@ export function ReconcileView() {
           </div>
         </div>
 
-        <form onSubmit={check} className="space-y-2">
-          <label htmlFor="actual" className="label">
-            What does your bank app show right now?
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="actual"
-              className="field tabular-nums"
-              inputMode="decimal"
-              placeholder={fmt.symbol}
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
-                setResult(null);
-              }}
-            />
-            <button type="submit" disabled={fmt.parseSigned(text) === null} className="btn btn-primary shrink-0">
+        {several ? (
+          <form onSubmit={check} className="space-y-3">
+            <p className="label">What does each bank app show right now?</p>
+            {live.map((a) => (
+              <label key={a.id} className="flex items-center gap-3">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px]">{a.name}</span>
+                  <span className="block text-xs text-muted tabular-nums">Spency: {fmt.money(a.balance)}</span>
+                </span>
+                <input
+                  className="field w-36 tabular-nums"
+                  inputMode="decimal"
+                  placeholder={fmt.symbol}
+                  value={texts[a.id] ?? ""}
+                  onChange={(e) => {
+                    setTexts({ ...texts, [a.id]: e.target.value });
+                    setResult(null);
+                  }}
+                />
+              </label>
+            ))}
+            <button type="submit" disabled={actualTotal === null} className="btn btn-primary w-full">
               Check
             </button>
-          </div>
-        </form>
+          </form>
+        ) : (
+          <form onSubmit={check} className="space-y-2">
+            <label htmlFor="actual" className="label">
+              What does your bank app show right now?
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="actual"
+                className="field tabular-nums"
+                inputMode="decimal"
+                placeholder={fmt.symbol}
+                value={text}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  setResult(null);
+                }}
+              />
+              <button type="submit" disabled={fmt.parseSigned(text) === null} className="btn btn-primary shrink-0">
+                Check
+              </button>
+            </div>
+          </form>
+        )}
 
         {result && (
           <div className="border-t border-line pt-5" aria-live="polite">
@@ -130,7 +185,11 @@ export function ReconcileView() {
                   <div className="mt-5 flex flex-wrap gap-2">
                     <button type="button" onClick={() => askClaude(result)} className="btn btn-ghost">
                       <Icon name={copied === "yes" ? "check" : "sparkle"} size={16} />
-                      {copied === "yes" ? "Copied, paste in Claude" : copied === "failed" ? "Couldn't copy. Try again" : "Find it with Claude"}
+                      {copied === "yes"
+                        ? "Copied, paste in Claude"
+                        : copied === "failed"
+                          ? "Couldn't copy. Try again"
+                          : "Find it with Claude"}
                     </button>
                     <button type="button" onClick={() => logAdjustment(result)} className="btn btn-ghost">
                       Log as adjustment
@@ -170,7 +229,9 @@ export function ReconcileView() {
                 <li key={c.date} className="flex justify-between py-3">
                   <span className="text-muted">{fmt.day(c.date)}</span>
                   <span className="tabular-nums">
-                    {c.actual === c.computed ? RESOLUTION_LABEL.matched : `${fmt.money(c.actual - c.computed, { signed: true })} · ${RESOLUTION_LABEL[c.resolution].toLowerCase()}`}
+                    {c.actual === c.computed
+                      ? RESOLUTION_LABEL.matched
+                      : `${fmt.money(c.actual - c.computed, { signed: true })} · ${RESOLUTION_LABEL[c.resolution].toLowerCase()}`}
                   </span>
                 </li>
               ))}

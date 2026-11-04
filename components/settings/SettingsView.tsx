@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useMemo, useState } from "react";
-import { useActions, useAppData, useFormat, useMode, useSignOut, useSummary, useHasCurrentPlan } from "@/lib/data/context";
+import { useActions, useAppData, useData, useFormat, useMode, useSignOut, useSummary, useHasCurrentPlan } from "@/lib/data/context";
+import { accountBalances } from "@/lib/engine/derive";
 import { useDemoStore } from "@/lib/data/demo";
 import { dayInPeriod } from "@/lib/engine/dates";
 import { planPeriod } from "@/lib/engine/plan";
@@ -172,6 +173,7 @@ function Preferences() {
       </Section>
 
       <Sorting />
+      <Accounts />
     </>
   );
 }
@@ -208,9 +210,90 @@ const WEEK_STARTS = [
 ] as const;
 type WeekStartValue = (typeof WEEK_STARTS)[number]["value"];
 
+/** Bank accounts. Budgets use the total; accounts show where the money sits. */
+function Accounts() {
+  const { accounts, plan } = useAppData();
+  const { saveAccounts, deleteAccount } = useActions();
+  const hasPlan = useHasCurrentPlan();
+
+  const add = () =>
+    saveAccounts(
+      accounts.length === 0
+        ? // Splitting the single implicit account: the existing money stays in the main one.
+          [
+            { id: crypto.randomUUID(), name: "Main account" },
+            { id: crypto.randomUUID(), name: "Savings" },
+          ]
+        : [...accounts, { id: crypto.randomUUID(), name: `Account ${accounts.length + 1}` }],
+    );
+
+  return (
+    <Section
+      title="Bank accounts"
+      hint="Your budget and target use the total across accounts. Accounts show where the money sits and which one a payment used."
+    >
+      {accounts.length === 0 ? (
+        <p className="text-sm text-muted">One bank account.</p>
+      ) : (
+        <ul className="divide-y divide-line rounded-2xl border border-line">
+          {accounts.map((a, i) => (
+            <AccountRow
+              key={`${a.id}:${a.name}`}
+              name={a.name}
+              main={i === 0}
+              onRename={(name) => saveAccounts(accounts.map((x) => (x.id === a.id ? { ...x, name } : x)))}
+              onRemove={() => {
+                const to = i === 0 ? accounts[1]?.name : accounts[0].name;
+                if (confirm(`Remove ${a.name}? Its payments${to ? ` and balance move to ${to}` : ""}.`)) deleteAccount(a.id);
+              }}
+            />
+          ))}
+        </ul>
+      )}
+      <button type="button" onClick={add} className="btn btn-ghost w-full">
+        <Icon name="plus" size={18} />
+        Add {accounts.length === 0 ? "another" : "an"} account
+      </button>
+      {accounts.length > 1 && hasPlan && plan && (
+        <p className="text-xs text-faint">New accounts start at zero. Set each one&apos;s balance under This month&apos;s plan.</p>
+      )}
+    </Section>
+  );
+}
+
+function AccountRow({ name, main, onRename, onRemove }: { name: string; main: boolean; onRename: (n: string) => void; onRemove: () => void }) {
+  const [text, setText] = useState(name);
+  return (
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <input
+        aria-label="Account name"
+        value={text}
+        maxLength={60}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => {
+          const next = text.trim();
+          if (!next) setText(name);
+          else if (next !== name) onRename(next);
+        }}
+        className="min-w-0 flex-1 bg-transparent text-[15px] outline-none"
+      />
+      {main && <span className="text-xs text-faint">Main</span>}
+      <button type="button" onClick={onRemove} aria-label={`Remove ${name}`} className="p-1 text-faint hover:text-bad">
+        <Icon name="trash" size={16} />
+      </button>
+    </li>
+  );
+}
+
 function PlanForm() {
-  const { plan } = useAppData();
+  const { plan, accounts } = useAppData();
   const s = useSummary();
+  const data = useData();
+  const live = useMemo(() => accountBalances(data.plan, accounts, data.txns), [data, accounts]);
+  const several = accounts.length > 1;
+  // Per-account balances (several accounts), following live figures until edited, like the single bank field.
+  const [accTexts, setAccTexts] = useState<Record<string, string> | null>(null);
+  const accText = (id: string, balance: number) => accTexts?.[id] ?? fmt.input(balance);
   const fmt = useFormat();
   const { setPlan } = useActions();
 
@@ -218,7 +301,9 @@ function PlanForm() {
   // re-baseline on a stale figure and silently drop anything confirmed since the page opened.
   const [bankText, setBank] = useState<string | null>(null);
   const [cashText, setCash] = useState<string | null>(null);
-  const bank = bankText ?? fmt.input(s.bank);
+  const accParsed = live.map((a) => fmt.parseSigned(accText(a.id, a.balance)));
+  const accOk = accParsed.every((v) => v !== null);
+  const bank = several ? (accOk ? fmt.input(accParsed.reduce<number>((t, v) => t + (v ?? 0), 0)) : "") : (bankText ?? fmt.input(s.bank));
   const cash = cashText ?? fmt.input(s.cash);
   const [target, setTarget] = useState(fmt.input(s.target));
   const [salary, setSalary] = useState(plan?.salary ? fmt.input(plan.salary.amount) : "");
@@ -240,20 +325,29 @@ function PlanForm() {
   const day = Number(salaryDay);
   const dayOk = Number.isInteger(day) && day >= 1 && day <= 31;
   const valid = p.bank !== null && p.cash !== null && p.target !== null && (!salary || (p.salary !== null && dayOk));
-  const rebase = bankText !== null || cashText !== null;
+  const rebase = bankText !== null || cashText !== null || accTexts !== null;
 
   function save(e: React.FormEvent) {
     e.preventDefault();
     if (!valid || p.bank === null || p.cash === null || p.target === null) return;
     setPlan({
       // Re-baselining only when a balance was edited: they're true as of now, so earlier payments are inside them.
-      ...(rebase ? { openingBank: p.bank, openingCash: p.cash, balanceAt: new Date().toISOString() } : {}),
+      ...(rebase
+        ? {
+            openingBank: p.bank,
+            openingCash: p.cash,
+            balanceAt: new Date().toISOString(),
+            // The main account takes whatever the others don't, so only the others are stored.
+            ...(several ? { openingAccounts: Object.fromEntries(live.slice(1).map((a, i) => [a.id, accParsed[i + 1] ?? 0])) } : {}),
+          }
+        : {}),
       target: p.target,
       salary: p.salary && dayOk && plan ? { amount: p.salary, date: dayInPeriod(planPeriod(plan), day) } : null,
       weekStart: Number(weekStart),
     });
     setBank(null);
     setCash(null);
+    setAccTexts(null);
     setSaved(true);
   }
 
@@ -261,7 +355,19 @@ function PlanForm() {
     <Section title="This month's plan" hint={`Spendable this month: ${fmt.money(s.spendable)}`}>
       <form onSubmit={save} className="space-y-5">
         <div className="grid grid-cols-2 gap-4">
-          <Money label="Bank balance now" symbol={fmt.symbol} value={bank} onChange={edit(setBank)} />
+          {several ? (
+            live.map((a) => (
+              <Money
+                key={a.id}
+                label={`${a.name} now`}
+                symbol={fmt.symbol}
+                value={accText(a.id, a.balance)}
+                onChange={edit((v: string) => setAccTexts({ ...Object.fromEntries(live.map((x) => [x.id, accText(x.id, x.balance)])), [a.id]: v }))}
+              />
+            ))
+          ) : (
+            <Money label="Bank balance now" symbol={fmt.symbol} value={bank} onChange={edit(setBank)} />
+          )}
           <Money label="Cash in hand" symbol={fmt.symbol} value={cash} onChange={edit(setCash)} />
           <Money label="Month-end target" symbol={fmt.symbol} value={target} onChange={edit(setTarget)} />
           <div />
