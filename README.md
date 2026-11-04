@@ -31,6 +31,7 @@ You tell Spency your balance today and the balance you want at month-end. It set
 - **Bills you can tick off.** Mark a bill paid and Spency logs the payment; untick one it assumed was paid and the money is set aside again. Payments can be filed under a bill straight from the Inbox.
 - **Nothing lands in Flex by accident.** Payments Spency or Claude can't place go to your default envelope (Small stuff unless you choose another in Settings); Flex is yours to pick.
 - **Cash** withdrawals are transfers, not spending. Cash purchases still count toward envelopes.
+- **Log or fix any day.** Quick add and the edit sheet take Today, Yesterday or any earlier date, so last night's cash spend lands on the right day.
 - **Daily reconcile** against your real bank balance, with a streak.
 - **Rebalance suggestions.** If one envelope goes over three weeks running while another stays under, Spency suggests moving money between them, applied in one tap.
 - **Start fresh** any time from Settings: a typed-confirmation reset that keeps your account.

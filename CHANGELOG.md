@@ -5,6 +5,7 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 ## [Unreleased]
 
 ### Added
+- Pick the day when adding or editing a payment (Today, Yesterday or any earlier date).
 - File a payment under a bill from the Inbox, quick add or edit sheet; it counts as paying that bill this month. Claude does the same when the merchant or its suggestion matches a bill.
 - Settings → Sorting: choose where unsorted payments go (default Small stuff). Payments are no longer filed under Flex unless you pick it; Claude's Flex suggestions are ignored. Needs the `default_envelope_id` migration.
 - `set_bill_paid` for Claude: "Netflix hasn't gone out yet" sets the money aside again; "rent is paid" logs a pending payment for you to confirm.
@@ -12,6 +13,14 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 - Claude can correct the past: `update_transaction`, `remove_transaction`, `update_commitment`, `remove_commitment`, `remove_envelope` and `update_plan`. Payments dated before the plan's starting balance are flagged so Claude can explain they don't change balances. Confirming new payments stays in the app.
 
 ### Fixed
+- Saving the plan in Settings re-baselined on the balance from when the page opened, dropping any payment confirmed in the meantime. Balances now follow live figures and only an edited balance re-baselines.
+- Starting a new month moved carried-over weekly and yearly bills onto a day this month. They keep their dates unless you change the day.
+- Onboarding silently dropped half-filled bills and envelopes, and a salary with no pay day. Each is now pointed out before you continue.
+- The edit sheet offered envelopes for cash withdrawals and adjustments (turning a withdrawal into spending). Removing a payment now takes a second tap.
+- Incoming payments in the Inbox looked like spends; they now show as +amount.
+- Copy buttons failed silently when the clipboard was blocked. Deleting a bill now asks first. Envelope editors no longer save on every blur and pick up changes made by Claude.
+- Saturday is offered as a week start.
+- Database: indexes behind the set-null foreign keys, and deleting a bill removes it from `unpaid_bills`. Needs the `fk_indexes_and_bill_cleanup` migration.
 - Bills showed only what was still due as "This month", so bills already paid this month disappeared from the total. Bills now shows the full monthly total and what's still due, and marks bills done for the month.
 
 ### Changed
