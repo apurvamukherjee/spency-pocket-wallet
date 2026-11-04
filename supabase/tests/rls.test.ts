@@ -87,6 +87,27 @@ describe("another user", () => {
   });
 });
 
+describe("app_snapshot", () => {
+  it("returns the caller's own month in one call", async () => {
+    const snap = await as(A, async () => (await db.query<{ s: Record<string, unknown[] | Record<string, unknown>> }>("select public.app_snapshot() as s")).rows[0].s);
+    expect(snap.profile).toMatchObject({ id: A, currency: "EUR" });
+    expect(snap.plan).toMatchObject({ month: "2026-11", opening_bank: 8000000 });
+    expect(snap.envelopes).toHaveLength(1);
+    expect(snap.transactions).toHaveLength(1);
+    expect(snap.reconcile_checks).toHaveLength(1);
+  });
+
+  it("shows another user nothing of the owner's", async () => {
+    const snap = await as(B, async () => (await db.query<{ s: Record<string, unknown> }>("select public.app_snapshot() as s")).rows[0].s);
+    expect(snap).toMatchObject({ plan: null, envelopes: [], commitments: [], transactions: [], merchant_memory: [], reconcile_checks: [] });
+    expect(snap.profile).toMatchObject({ id: B });
+  });
+
+  it("can't be called anonymously", async () => {
+    await expect(as("anon", () => db.query("select public.app_snapshot()"))).rejects.toThrow(/permission denied/);
+  });
+});
+
 describe("anonymous visitors", () => {
   it.each(TABLES)("are denied %s", async (t) => {
     await expect(as("anon", () => db.query(`select * from ${t}`))).rejects.toThrow(/permission denied/);

@@ -82,6 +82,17 @@ export type ReconcileCheckRow = {
   resolution: "matched" | "adjusted" | "ignored";
 };
 
+/** Returned by app_snapshot(): one month of the caller's data in a single round trip. */
+export type Snapshot = {
+  profile: ProfileRow | null;
+  plan: MonthPlanRow | null;
+  envelopes: EnvelopeRow[];
+  commitments: CommitmentRow[];
+  transactions: TransactionRow[];
+  merchant_memory: MerchantMemoryRow[];
+  reconcile_checks: ReconcileCheckRow[];
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -94,7 +105,9 @@ export type Database = {
       reconcile_checks: Table<ReconcileCheckRow, "date" | "computed" | "actual" | "resolution">;
     };
     Views: { [_ in never]: never };
-    Functions: { [_ in never]: never };
+    Functions: {
+      app_snapshot: { Args: Record<PropertyKey, never>; Returns: Snapshot };
+    };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
   };

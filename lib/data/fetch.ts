@@ -1,5 +1,6 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import type { Supabase } from "@/lib/supabase/client";
+import type { Snapshot } from "@/lib/supabase/database.types";
 import * as rows from "./rows";
 import type { AppData } from "./types";
 
@@ -30,8 +31,34 @@ export function must<T>(res: { data: T | null; error: PostgrestError | null }): 
   return data;
 }
 
-// ponytail: one round trip for everything a month needs; paginate transactions if a month ever passes 1,000.
+/** Not deployed yet (migration pending): fall back to separate queries rather than failing. */
+const MISSING_FUNCTION = new Set(["PGRST202", "42883"]);
+
+/** One round trip via app_snapshot(); falls back to the per-table queries if that function isn't deployed. */
 export async function fetchAppData(sb: Supabase, user: User): Promise<AppData> {
+  const res = await sb.rpc("app_snapshot");
+  if (res.error && MISSING_FUNCTION.has(res.error.code)) {
+    console.warn("app_snapshot() missing; apply the latest migration. Using separate queries.");
+    return fetchAppDataSlow(sb, user);
+  }
+  return fromSnapshot(must(res), user);
+}
+
+export function fromSnapshot(s: Snapshot, user: User): AppData {
+  if (!s.profile) throw new EmptyResponseError("No profile for this user");
+  return {
+    profile: rows.profileFromRow(s.profile, user.email),
+    plan: s.plan && rows.planFromRow(s.plan),
+    envelopes: s.envelopes.map(rows.envelopeFromRow),
+    commitments: s.commitments.map(rows.commitmentFromRow),
+    txns: s.transactions.map(rows.txnFromRow),
+    memory: Object.fromEntries(s.merchant_memory.map((m) => [m.merchant, m.envelope_id])),
+    checks: s.reconcile_checks.map(rows.checkFromRow),
+  };
+}
+
+// The pre-app_snapshot path: six queries, then transactions once the plan is known.
+async function fetchAppDataSlow(sb: Supabase, user: User): Promise<AppData> {
   const [profile, plan, envelopes, commitments, memory, checks] = await Promise.all([
     sb.from("profiles").select("*").eq("id", user.id).single().then(must),
     sb.from("month_plans").select("*").order("month", { ascending: false }).limit(1).maybeSingle().then(maybe),
@@ -43,17 +70,11 @@ export async function fetchAppData(sb: Supabase, user: User): Promise<AppData> {
   // From a week before the plan (its partial first week) or four weeks back (pattern detection), whichever is
   // earlier; pending items always come along.
   const since = new Date(Math.min(plan ? Date.parse(plan.balance_at) - 8 * DAY_MS : Infinity, Date.now() - 29 * DAY_MS)).toISOString();
-  const txns = must(
+  const transactions = must(
     await sb.from("transactions").select("*").or(`status.eq.pending,occurred_at.gte."${since}"`).order("occurred_at"),
   );
-  return {
-    profile: rows.profileFromRow(profile, user.email),
-    plan: plan && rows.planFromRow(plan),
-    envelopes: envelopes.map(rows.envelopeFromRow),
-    commitments: commitments.map(rows.commitmentFromRow),
-    txns: txns.map(rows.txnFromRow),
-    memory: Object.fromEntries(memory.map((m) => [m.merchant, m.envelope_id])),
-    checks: checks.map(rows.checkFromRow),
-  };
+  return fromSnapshot(
+    { profile, plan, envelopes, commitments, transactions, merchant_memory: memory, reconcile_checks: checks },
+    user,
+  );
 }
-
