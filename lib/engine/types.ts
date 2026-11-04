@@ -25,6 +25,10 @@ export type Txn = {
   /** null and no commitmentId → flex. */
   envelopeId: string | null;
   commitmentId: string | null;
+  /** Bank account used; null or missing → the main account. Ignored for cash. */
+  accountId?: string | null;
+  /** A move between the user's own accounts: where it went. Only on bank transfers; changes no totals. */
+  toAccountId?: string | null;
   /** ISO instant with offset. */
   occurredAt: string;
   source: TxnSource;
@@ -33,6 +37,9 @@ export type Txn = {
   note: string | null;
   createdAt: string;
 };
+
+/** A bank account. The first (by list order) is the main one. */
+export type Account = { id: string; name: string };
 
 export type LeftoverRule = "rollover" | "to_flex" | "to_target";
 
@@ -81,4 +88,9 @@ export type MonthPlan = {
    * started. That money is inside the opening balance but isn't spendable.
    */
   billFunds?: Record<string, Minor>;
+  /**
+   * Starting balance of each account other than the main one. The main account holds the rest of openingBank,
+   * so openingBank is always the total.
+   */
+  openingAccounts?: Record<string, Minor>;
 };

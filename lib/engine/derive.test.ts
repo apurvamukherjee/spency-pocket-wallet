@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { billFundsAtEnd, billStatus, catchUp, summarize, type SpencyData, walletBalances } from "./derive";
+import { accountBalances, billFundsAtEnd, billStatus, catchUp, summarize, type SpencyData, walletBalances } from "./derive";
 import { major as rupees } from "./money";
 import { isCurrentPlan } from "./plan";
 import type { Envelope, Txn } from "./types";
@@ -366,5 +366,36 @@ describe("payday-to-payday months", () => {
     expect(isCurrentPlan(plan, "2026-11-25")).toBe(false);
     expect(isCurrentPlan(base().plan, "2026-11-30")).toBe(true);
     expect(isCurrentPlan(base().plan, "2026-12-01")).toBe(false);
+  });
+});
+
+describe("several bank accounts", () => {
+  const accounts = [
+    { id: "main", name: "Main" },
+    { id: "sav", name: "Savings" },
+  ];
+  const plan = { ...base().plan, openingAccounts: { sav: rupees(30000) } };
+
+  it("splits the bank total, with the main account holding the rest", () => {
+    expect(accountBalances(plan, accounts, []).map((a) => a.balance)).toEqual([rupees(50000), rupees(30000)]);
+  });
+
+  it("moves between accounts without changing totals or the budget", () => {
+    const move = txn("2026-11-03", 5000, { kind: "transfer", accountId: "sav", toAccountId: "main" });
+    const spend = txn("2026-11-03", 200, { accountId: "sav" });
+    const unassigned = txn("2026-11-03", 100);
+    const txns = [move, spend, unassigned];
+    expect(accountBalances(plan, accounts, txns).map((a) => a.balance)).toEqual([rupees(54900), rupees(24800)]);
+    expect(walletBalances(plan, txns)).toEqual({ bank: rupees(79700), cash: 0 });
+    const withMove = summarize(base({ plan, txns }), "2026-11-04");
+    const without = summarize(base({ plan, txns: [spend, unassigned] }), "2026-11-04");
+    expect(withMove.projected).toBe(without.projected);
+  });
+
+  it("hands a deleted account's money to the main account", () => {
+    const txns = [txn("2026-11-03", 200, { accountId: "gone" })];
+    const balances = accountBalances(plan, accounts, txns);
+    expect(balances[0].balance + balances[1].balance).toBe(walletBalances(plan, txns).bank);
+    expect(balances[0].balance).toBe(rupees(49800));
   });
 });

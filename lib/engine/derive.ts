@@ -15,7 +15,7 @@ import {
   weeksCovering,
 } from "./plan";
 import { type Settlement, settleWeek, type SettlementStatus } from "./settle";
-import type { Commitment, Envelope, ISODate, MonthPlan, Minor, Txn } from "./types";
+import type { Account, Commitment, Envelope, ISODate, MonthPlan, Minor, Txn } from "./types";
 
 export type SpencyData = {
   plan: MonthPlan;
@@ -76,7 +76,8 @@ export function walletBalances(plan: MonthPlan, txns: Txn[]): { bank: Minor; cas
   let bank = plan.openingBank;
   let cash = plan.openingCash;
   for (const t of txns) {
-    if (!confirmedAfter(plan, t)) continue;
+    // A move between the user's own accounts leaves the bank total as it was.
+    if (!confirmedAfter(plan, t) || t.toAccountId) continue;
     const delta = signed(t);
     if (t.wallet === "bank") bank += delta;
     else cash += delta;
@@ -86,6 +87,31 @@ export function walletBalances(plan: MonthPlan, txns: Txn[]): { bank: Minor; cas
     }
   }
   return { bank, cash };
+}
+
+/**
+ * Each account's balance now. Payments without an account (or with one since deleted) belong to the main account
+ * (the first), which also holds whatever of openingBank the others don't, so the balances always sum to the bank
+ * total from walletBalances.
+ */
+export function accountBalances(plan: MonthPlan, accounts: Account[], txns: Txn[]): (Account & { balance: Minor })[] {
+  if (accounts.length === 0) return [];
+  const known = new Set(accounts.map((a) => a.id));
+  const main = accounts[0].id;
+  const home = (id: string | null | undefined) => (id && known.has(id) ? id : main);
+  const balance = new Map<string, Minor>(accounts.map((a) => [a.id, a.id === main ? 0 : (plan.openingAccounts?.[a.id] ?? 0)]));
+  const others = [...balance.values()].reduce((s, v) => s + v, 0);
+  balance.set(main, plan.openingBank - others);
+  for (const t of txns) {
+    if (!confirmedAfter(plan, t) || t.wallet !== "bank") continue;
+    const from = home(t.accountId);
+    balance.set(from, (balance.get(from) ?? 0) + signed(t));
+    if (t.toAccountId) {
+      const to = home(t.toAccountId);
+      balance.set(to, (balance.get(to) ?? 0) - signed(t));
+    }
+  }
+  return accounts.map((a) => ({ ...a, balance: balance.get(a.id) ?? 0 }));
 }
 
 /** Net envelope spend in [from, to]; refunds (credits) reduce it. Both wallets count. */
