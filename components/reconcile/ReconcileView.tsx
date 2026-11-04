@@ -21,7 +21,7 @@ export function ReconcileView() {
   const fmt = useFormat();
   const [text, setText] = useState("");
   const [result, setResult] = useState<Result | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"yes" | "failed" | false>(false);
   const streak = reconcileStreak(checks, s.today);
   const last7 = Array.from({ length: 7 }, (_, i) => addDays(s.today, i - 6));
   const checkedDays = new Set(checks.map((c) => c.date));
@@ -56,8 +56,14 @@ export function ReconcileView() {
 
   async function askClaude(r: Result) {
     const prompt = `My Spency bank balance is ${fmt.money(Math.abs(r.gap))} ${r.gap < 0 ? "higher" : "lower"} than my real bank balance. Can you help me find the payment I haven't logged? I'll share my recent payment screenshots.`;
-    await navigator.clipboard.writeText(prompt);
-    setCopied(true);
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied("yes");
+    } catch (e) {
+      // Clipboard can be blocked (permissions, insecure origin); say so instead of failing silently.
+      console.warn("Clipboard write failed", e);
+      setCopied("failed");
+    }
   }
 
   return (
@@ -123,8 +129,8 @@ export function ReconcileView() {
                 ) : (
                   <div className="mt-5 flex flex-wrap gap-2">
                     <button type="button" onClick={() => askClaude(result)} className="btn btn-ghost">
-                      <Icon name={copied ? "check" : "sparkle"} size={16} />
-                      {copied ? "Copied, paste in Claude" : "Find it with Claude"}
+                      <Icon name={copied === "yes" ? "check" : "sparkle"} size={16} />
+                      {copied === "yes" ? "Copied, paste in Claude" : copied === "failed" ? "Couldn't copy. Try again" : "Find it with Claude"}
                     </button>
                     <button type="button" onClick={() => logAdjustment(result)} className="btn btn-ghost">
                       Log as adjustment

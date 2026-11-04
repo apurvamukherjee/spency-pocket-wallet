@@ -16,11 +16,16 @@ const STEPS = [
 /** Cloud mode only: the connector URL plus every app the user has authorized, with a way to revoke each. */
 export function ConnectClaude() {
   const url = `${window.location.origin}/api/mcp`;
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"yes" | "failed" | false>(false);
 
   async function copy() {
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied("yes");
+    } catch (e) {
+      console.warn("Clipboard write failed", e);
+      setCopied("failed");
+    }
   }
 
   return (
@@ -31,10 +36,10 @@ export function ConnectClaude() {
       </div>
       <div className="card space-y-5 p-5">
         <div className="flex items-center gap-2 rounded-xl bg-raised py-1.5 pr-1.5 pl-3.5">
-          <code className="min-w-0 flex-1 truncate font-mono text-sm">{url}</code>
+          <code className="min-w-0 flex-1 truncate font-mono text-sm select-all">{url}</code>
           <button type="button" onClick={copy} className="btn btn-primary shrink-0 px-3 py-1.5 text-sm">
-            <Icon name={copied ? "check" : "copy"} size={15} />
-            {copied ? "Copied" : "Copy"}
+            <Icon name={copied === "yes" ? "check" : "copy"} size={15} />
+            {copied === "yes" ? "Copied" : copied === "failed" ? "Select and copy" : "Copy"}
           </button>
         </div>
         <ol className="space-y-2.5 text-sm">
