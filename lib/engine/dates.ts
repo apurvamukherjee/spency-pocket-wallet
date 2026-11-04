@@ -14,6 +14,26 @@ export function toLocalDate(instant: string | Date, timeZone: string): ISODate {
   return f.format(typeof instant === "string" ? new Date(instant) : instant);
 }
 
+/**
+ * Midday on calendar day `d` in `timeZone`, as a UTC ISO instant. Used when a payment is logged for a past day
+ * with no time: midday sits on the same calendar day in every zone, even across DST changes.
+ */
+export function middayIn(d: ISODate, timeZone: string): string {
+  const guess = Date.parse(`${d}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+  }).formatToParts(guess);
+  const n = (t: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === t)?.value);
+  const wall = Date.UTC(n("year"), n("month") - 1, n("day"), n("hour"), n("minute"));
+  return new Date(guess - (wall - guess)).toISOString();
+}
+
 export function todayIn(timeZone: string, now: Date = new Date()): ISODate {
   return toLocalDate(now, timeZone);
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  middayIn,
   addDays,
   addMonths,
   dayInMonth,
@@ -55,5 +56,12 @@ describe("dates", () => {
     expect(addMonths("2026-01-31", 1)).toBe("2026-02-28");
     expect(addMonths("2026-02-28", 1, 31)).toBe("2026-03-31");
     expect(addMonths("2026-01-15", -1)).toBe("2025-12-15");
+  });
+
+  it("middayIn lands on the same calendar day in any zone", () => {
+    for (const tz of ["Asia/Kolkata", "Pacific/Kiritimati", "Pacific/Pago_Pago", "America/New_York", "UTC"]) {
+      expect(toLocalDate(middayIn("2026-03-08", tz), tz)).toBe("2026-03-08");
+    }
+    expect(middayIn("2026-11-04", "Asia/Kolkata")).toBe("2026-11-04T06:30:00.000Z");
   });
 });
