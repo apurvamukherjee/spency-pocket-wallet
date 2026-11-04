@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Standalone Node scripts that build the README film; not part of the app.
+    "docs/film/**",
   ]),
 ]);
 

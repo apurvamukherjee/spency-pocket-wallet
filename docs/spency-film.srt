@@ -1,0 +1,31 @@
+1
+00:00:05,500 --> 00:00:10,650
+Spency sets your bills aside, splits the rest into weekly envelopes, and tells you what's safe to spend today.
+
+2
+00:00:11,500 --> 00:00:18,150
+Send Claude a payment screenshot. It lands in your Inbox: swipe right to confirm.
+
+3
+00:00:19,000 --> 00:00:24,150
+Go over in one envelope and savings from the others cover it, then flex. Your target comes last.
+
+4
+00:00:25,000 --> 00:00:29,650
+Insurance and annual plans are saved for a little each month, so no single month takes the hit.
+
+5
+00:00:30,500 --> 00:00:35,150
+Refunds return to the envelope they came from. Extra income: spend it this month, or save it.
+
+6
+00:00:36,000 --> 00:00:40,650
+Run each month from payday to payday, or from the 1st to the last day.
+
+7
+00:00:41,500 --> 00:00:46,650
+Track several bank accounts, then check each one against your bank app in ten seconds.
+
+8
+00:00:47,500 --> 00:00:53,150
+Any currency, language and time zone. No bank logins, ever: Spency only knows what you or Claude tell it.
