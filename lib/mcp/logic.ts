@@ -27,6 +27,18 @@ export function toMinor(value: number | string, unit: number): Minor {
   return minor;
 }
 
+/** For balances and targets, which can be zero or overdrawn: "-2000" → minus 2,000. Payment amounts use toMinor. */
+export function toSignedMinor(value: number | string, unit: number): Minor {
+  const text = String(value).trim();
+  const negative = /^[-\u2212]/.test(text);
+  const rest = negative ? text.slice(1) : text;
+  // Zero is a valid balance (toMinor rejects it as a payment amount): digits present, and all of them zero.
+  const plain = rest.replace(/[\s,]/g, "").replace(/^[^\d.]+/, "");
+  if (/\d/.test(plain) && /^0*(?:\.0*)?$/.test(plain)) return 0;
+  const v = toMinor(rest, unit);
+  return negative ? -v : v;
+}
+
 export type CategoryMatch = Category & { via: "memory" | "bill" | "suggestion" | "default" };
 
 /**

@@ -210,7 +210,8 @@ function PlanForm() {
       setSaved(false);
     };
 
-  const p = { bank: fmt.parse(bank), cash: fmt.parse(cash || "0"), target: fmt.parse(target), salary: fmt.parse(salary) };
+  // The bank balance and target may be negative (overdraft); cash and salary can't be.
+  const p = { bank: fmt.parseSigned(bank), cash: fmt.parse(cash || "0"), target: fmt.parseSigned(target), salary: fmt.parse(salary) };
   const day = Number(salaryDay);
   const dayOk = Number.isInteger(day) && day >= 1 && day <= 31;
   const valid = p.bank !== null && p.cash !== null && p.target !== null && (!salary || (p.salary !== null && dayOk));

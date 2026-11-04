@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { rememberMerchant } from "@/lib/engine/inbox";
 import type { Envelope, Txn } from "@/lib/engine/types";
-import { beforePlanNote, categoryByName, planImport, resolveCategory, toMinor, ToolInputError } from "./logic";
+import { beforePlanNote, categoryByName, planImport, resolveCategory, toMinor, ToolInputError, toSignedMinor } from "./logic";
 
 const env = (id: string, name: string): Envelope => ({ id, name, weeklyLimit: 50000, locked: false, leftover: "rollover" });
 const envelopes = [env("g", "Groceries"), env("e", "Eating out"), env("s", "Small stuff")];
@@ -133,5 +133,15 @@ describe("beforePlanNote", () => {
     expect(beforePlanNote("2026-10-30T10:00:00Z", "2026-11-01T00:00:00+05:30")).toMatch(/before this month's plan/);
     expect(beforePlanNote("2026-11-02T10:00:00Z", "2026-11-01T00:00:00+05:30")).toBeUndefined();
     expect(beforePlanNote("2026-10-30T10:00:00Z", null)).toBeUndefined();
+  });
+});
+
+describe("toSignedMinor", () => {
+  it("accepts zero and overdrawn balances", () => {
+    expect(toSignedMinor("-2,000.50", 100)).toBe(-200050);
+    expect(toSignedMinor(0, 100)).toBe(0);
+    expect(toSignedMinor("₹0.00", 100)).toBe(0);
+    expect(toSignedMinor("1500", 100)).toBe(150000);
+    expect(() => toSignedMinor("abc", 100)).toThrow(ToolInputError);
   });
 });

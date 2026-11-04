@@ -76,8 +76,9 @@ export function OnboardingView() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const bankP = fmt.parse(bank);
-  const targetP = fmt.parse(target);
+  // Either can be below zero: an overdrawn account, or a target that pays an overdraft down.
+  const bankP = fmt.parseSigned(bank);
+  const targetP = fmt.parseSigned(target);
   const salaryP = fmt.parse(salary);
   const salaryDayN = Number(salaryDay);
   const salaryDayOk = salaryDayN >= 1 && salaryDayN <= 31;
@@ -189,7 +190,14 @@ export function OnboardingView() {
 
       {step === 0 && (
         <div className="space-y-5">
-          <MoneyField label="What's in your bank right now?" symbol={fmt.symbol} value={bank} onChange={setBank} autoFocus />
+          <MoneyField
+            label="What's in your bank right now?"
+            hint="Overdrawn? Put a minus in front, like -2000."
+            symbol={fmt.symbol}
+            value={bank}
+            onChange={setBank}
+            autoFocus
+          />
           <MoneyField label="What would you like to end the month with?" symbol={fmt.symbol} value={target} onChange={setTarget} />
           <div className="grid grid-cols-[1fr_6rem] gap-3">
             <MoneyField label="Pay still coming this month (optional)" symbol={fmt.symbol} value={salary} onChange={setSalary} />
@@ -336,7 +344,14 @@ export function OnboardingView() {
   );
 }
 
-function MoneyField(props: { label: string; symbol: string; value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
+function MoneyField(props: {
+  label: string;
+  hint?: string;
+  symbol: string;
+  value: string;
+  onChange: (v: string) => void;
+  autoFocus?: boolean;
+}) {
   return (
     <label className="block space-y-1.5">
       <span className="label">{props.label}</span>
@@ -348,6 +363,7 @@ function MoneyField(props: { label: string; symbol: string; value: string; onCha
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
       />
+      {props.hint && <span className="block text-xs text-faint">{props.hint}</span>}
     </label>
   );
 }

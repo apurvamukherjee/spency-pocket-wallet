@@ -33,7 +33,7 @@ export function ReconcileView() {
 
   function check(e: React.FormEvent) {
     e.preventDefault();
-    const actual = fmt.parse(text);
+    const actual = fmt.parseSigned(text);
     if (actual === null) return;
     const r: Result = { actual, gap: reconcileGap(s.bank, actual), done: null };
     setCopied(false);
@@ -101,7 +101,7 @@ export function ReconcileView() {
                 setResult(null);
               }}
             />
-            <button type="submit" disabled={fmt.parse(text) === null} className="btn btn-primary shrink-0">
+            <button type="submit" disabled={fmt.parseSigned(text) === null} className="btn btn-primary shrink-0">
               Check
             </button>
           </div>

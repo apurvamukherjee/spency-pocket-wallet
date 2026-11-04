@@ -13,7 +13,17 @@ import { reconcileGap } from "@/lib/engine/reconcile";
 import type { Commitment, Envelope, Txn } from "@/lib/engine/types";
 import type { Supabase } from "@/lib/supabase/client";
 import { supabaseAs } from "@/lib/supabase/token";
-import { beforePlanNote, categoryByName, findEnvelope, planImport, summaryPayload, ToolInputError, toMinor, txnPayload } from "./logic";
+import {
+  beforePlanNote,
+  categoryByName,
+  findEnvelope,
+  planImport,
+  summaryPayload,
+  ToolInputError,
+  toMinor,
+  toSignedMinor,
+  txnPayload,
+} from "./logic";
 
 export const INSTRUCTIONS = `Spency is the user's personal spending tracker. It helps them end each month on a balance they chose.
 
@@ -30,6 +40,10 @@ Questions like "can I afford a 1,500 dinner?": call get_summary and compare with
 Amounts are in the user's currency in normal units (249.50), never in cents or paise.`;
 
 const amount = z.union([z.number().positive(), z.string().min(1)]).describe("Amount in the user's currency, normal units, e.g. 249 or \"249.50\"");
+/** Balances and targets can be zero or negative (an overdrawn account). */
+const balance = z
+  .union([z.number(), z.string().min(1)])
+  .describe("Amount in the user's currency, normal units; may be zero or negative, e.g. -2000");
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 
 type Ctx = { http?: { authInfo?: AuthInfo } };
@@ -465,12 +479,12 @@ export function registerTools(server: McpServer) {
       description:
         "Change the month-end target, expected pay (amount and pay day of the month), week start, or reset the starting bank and cash balances to what the user has right now (that becomes the new starting point, as in Settings). Confirm with the user first.",
       inputSchema: z.object({
-        target: amount.optional().describe("Balance the user wants at month end"),
+        target: balance.optional().describe("Balance the user wants at month end; negative to pay an overdraft down, e.g. \"-5000\""),
         salary_amount: amount.optional(),
         pay_day: z.number().int().min(1).max(31).optional().describe("Day of the month pay arrives"),
         remove_salary: z.boolean().optional(),
         week_start: z.enum(["monday", "sunday"]).optional(),
-        bank_balance: amount.optional().describe("Real bank balance right now"),
+        bank_balance: balance.optional().describe("Real bank balance right now; negative if overdrawn"),
         cash_in_hand: z.union([z.number().min(0), z.string()]).optional().describe("Cash right now; 0 if none"),
       }),
     },
@@ -491,7 +505,7 @@ export function registerTools(server: McpServer) {
         const plan = s.data.plan;
         if (!plan) throw new ToolInputError("No plan for this month yet.");
         const patch: Partial<PlanInput> = {};
-        if (args.target !== undefined) patch.target = toMinor(args.target, s.unit);
+        if (args.target !== undefined) patch.target = toSignedMinor(args.target, s.unit);
         if (args.week_start) patch.weekStart = args.week_start === "monday" ? 1 : 0;
         if (args.remove_salary) patch.salary = null;
         else if (args.salary_amount !== undefined || args.pay_day !== undefined) {
@@ -501,7 +515,7 @@ export function registerTools(server: McpServer) {
           patch.salary = { amount: salary, date: dayInMonth(plan.month, day) };
         }
         if (args.bank_balance !== undefined || args.cash_in_hand !== undefined) {
-          patch.openingBank = args.bank_balance !== undefined ? toMinor(args.bank_balance, s.unit) : now.bank;
+          patch.openingBank = args.bank_balance !== undefined ? toSignedMinor(args.bank_balance, s.unit) : now.bank;
           patch.openingCash =
             args.cash_in_hand === undefined ? now.cash : Number(args.cash_in_hand) === 0 ? 0 : toMinor(args.cash_in_hand, s.unit);
           patch.balanceAt = new Date().toISOString();
@@ -595,11 +609,11 @@ export function registerTools(server: McpServer) {
       title: "Check the bank balance",
       description:
         "Compare the user's real bank balance with Spency's. Returns the difference so you can help find a missing payment. Does not change anything unless the balances match (then it records today's check).",
-      inputSchema: z.object({ actual_bank_balance: amount.describe("What the user's bank app shows right now") }),
+      inputSchema: z.object({ actual_bank_balance: balance.describe("What the user's bank app shows right now; negative if overdrawn") }),
     },
     guard(async ({ actual_bank_balance }: { actual_bank_balance: number | string }, s) => {
       const summary = needsPlan(s);
-      const actual = toMinor(actual_bank_balance, s.unit);
+      const actual = toSignedMinor(actual_bank_balance, s.unit);
       const gap = reconcileGap(summary.bank, actual);
       if (gap === 0) {
         ok(await s.sb.from("reconcile_checks").upsert(rows.checkToRow({ date: s.today, computed: summary.bank, actual, resolution: "matched" }), { onConflict: "user_id,date" }));
