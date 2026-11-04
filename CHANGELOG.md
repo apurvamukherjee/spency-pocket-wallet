@@ -5,6 +5,8 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 ## [Unreleased]
 
 ### Added
+- Payday-to-payday months: a month can start on any day (say the 25th, when pay lands) and run to the day before the next. Onboarding asks and shows the dates; Settings shows them. Calendar months are unchanged. Needs the `start_day` migration.
+- Several bank accounts: name them in Settings, pick the account on each payment, move money between them (not spending), enter each balance in onboarding and the plan, and reconcile each against its bank app. Budgets and the target use the total. Claude can file payments under an account and sees each balance. Needs the `accounts` migration.
 - Yearly bills are saved for month by month: each sets aside its shortfall spread over the months until it's due, so the month it falls due isn't a shock. Bills shows progress ("9,000 of 24,000 saved") and takes what's already put aside; savings carry into the next month and aren't counted as spending money. Needs the `bill_funds` migration.
 - Money in: log a refund (back into the envelope it came from), income to spend (joins Flex) or income to save (lifts month-end above target). Claude files credits from known merchants as refunds.
 - Overdrafts: a negative bank balance or target in onboarding, Settings, Reconcile and Claude's `update_plan` and `reconcile`.

@@ -28,6 +28,8 @@ You tell Spency your balance today and the balance you want at month-end. It set
 - **Projected month-end** against your target, updated with every payment.
 - **Inbox** of payments Claude read from your screenshots. They appear as Claude sends them, no refresh needed. Swipe right to confirm, left to dismiss. Duplicates are flagged.
 - **Merchant memory.** Recategorize a shop once; future payments there land in the right envelope.
+- **Months that match your pay.** Run each month from payday to payday, or the 1st to the last day.
+- **Several bank accounts.** Your budget and target use the total; each payment shows which account it used, and moving money between your own accounts isn't spending.
 - **Yearly bills without the shock.** Insurance or an annual subscription is saved for a little each month, so the month it's due feels like any other.
 - **Refunds and extra income.** A refund goes back into the envelope it came from; extra income can be spent this month or saved.
 - **Works when you're overdrawn.** Balances and targets can be negative, so you can plan your way out of an overdraft.
@@ -61,7 +63,7 @@ Spency runs a remote [MCP](https://modelcontextprotocol.io) server at `/api/mcp`
 | Tool | What Claude can do |
 |---|---|
 | `get_summary` | Safe to spend today, envelopes, flex, bills, projected month-end. Answers "can I afford this?" |
-| `add_transactions` | Send payments read from screenshots to your Inbox as pending. Applies merchant memory, skips duplicates by reference or merchant + amount within 2 minutes. |
+| `add_transactions` | Send payments read from screenshots to your Inbox as pending. Applies merchant memory, skips duplicates by reference or merchant + amount within 2 minutes, files refunds back into their envelope, and takes the bank account when you have several. |
 | `list_transactions` | Look up payments by date, status or category. |
 | `update_envelope` | Change or create an envelope when you ask. |
 | `add_commitment` | Add a recurring bill. |
@@ -72,7 +74,7 @@ Spency runs a remote [MCP](https://modelcontextprotocol.io) server at `/api/mcp`
 | `update_commitment` / `remove_commitment` | Change or stop tracking a bill. |
 | `set_bill_paid` | "Netflix hasn't gone out yet" or "rent is paid": sets a bill's status for this month. |
 | `remove_envelope` | Delete an envelope; its history moves to Flex. |
-| `update_plan` | Change your target, pay and pay day, week start, or reset balances to what you have now. |
+| `update_plan` | Change your target, pay and pay day, week start, or reset balances to what you have now (negative if overdrawn). |
 
 Claude can't confirm transactions for you: new payments wait in your Inbox until you swipe them in. It can correct or remove existing ones when you ask, and it's told to check with you before removing anything or changing balances.
 
