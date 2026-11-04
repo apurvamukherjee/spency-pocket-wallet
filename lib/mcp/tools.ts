@@ -4,7 +4,8 @@ import { fetchAppData, ok } from "@/lib/data/fetch";
 import { enginePlan } from "@/lib/data/plan";
 import * as rows from "@/lib/data/rows";
 import type { AppData, PlanInput } from "@/lib/data/types";
-import { addDays, dayInMonth, monthOf, toLocalDate, todayIn } from "@/lib/engine/dates";
+import { addDays, dayInPeriod, toLocalDate, todayIn } from "@/lib/engine/dates";
+import { isCurrentPlan, planPeriod } from "@/lib/engine/plan";
 import { billStatus, summarize } from "@/lib/engine/derive";
 import { defaultEnvelopeId, normalizeMerchant } from "@/lib/engine/inbox";
 import { categoryLabel } from "@/lib/data/category";
@@ -84,7 +85,7 @@ const fallbackEnvelope = (s: Session) => defaultEnvelopeId(s.data.envelopes, s.d
 
 function needsPlan(s: Session) {
   const { plan, profile } = s.data;
-  if (!plan || plan.month !== monthOf(s.today)) {
+  if (!plan || !isCurrentPlan(plan, s.today)) {
     throw new ToolInputError("The user hasn't set up this month's plan yet. Ask them to open Spency once to set their balance and target.");
   }
   return summarize({ ...s.data, plan: enginePlan(plan, profile) }, s.today);
@@ -483,7 +484,7 @@ export function registerTools(server: McpServer) {
         salary_amount: amount.optional(),
         pay_day: z.number().int().min(1).max(31).optional().describe("Day of the month pay arrives"),
         remove_salary: z.boolean().optional(),
-        week_start: z.enum(["monday", "sunday"]).optional(),
+        week_start: z.enum(["monday", "sunday", "saturday"]).optional(),
         bank_balance: balance.optional().describe("Real bank balance right now; negative if overdrawn"),
         cash_in_hand: z.union([z.number().min(0), z.string()]).optional().describe("Cash right now; 0 if none"),
       }),
@@ -495,7 +496,7 @@ export function registerTools(server: McpServer) {
           salary_amount?: number | string;
           pay_day?: number;
           remove_salary?: boolean;
-          week_start?: "monday" | "sunday";
+          week_start?: "monday" | "sunday" | "saturday";
           bank_balance?: number | string;
           cash_in_hand?: number | string;
         },
@@ -506,13 +507,14 @@ export function registerTools(server: McpServer) {
         if (!plan) throw new ToolInputError("No plan for this month yet.");
         const patch: Partial<PlanInput> = {};
         if (args.target !== undefined) patch.target = toSignedMinor(args.target, s.unit);
-        if (args.week_start) patch.weekStart = args.week_start === "monday" ? 1 : 0;
+        if (args.week_start) patch.weekStart = { monday: 1, sunday: 0, saturday: 6 }[args.week_start];
         if (args.remove_salary) patch.salary = null;
         else if (args.salary_amount !== undefined || args.pay_day !== undefined) {
           const salary = args.salary_amount !== undefined ? toMinor(args.salary_amount, s.unit) : plan.salary?.amount;
           const day = args.pay_day ?? (plan.salary ? +plan.salary.date.slice(8) : undefined);
           if (salary === undefined || day === undefined) throw new ToolInputError("Give both salary_amount and pay_day the first time.");
-          patch.salary = { amount: salary, date: dayInMonth(plan.month, day) };
+          // The pay day's date inside this plan's month, which may run payday to payday.
+          patch.salary = { amount: salary, date: dayInPeriod(planPeriod(plan), day) };
         }
         if (args.bank_balance !== undefined || args.cash_in_hand !== undefined) {
           patch.openingBank = args.bank_balance !== undefined ? toSignedMinor(args.bank_balance, s.unit) : now.bank;

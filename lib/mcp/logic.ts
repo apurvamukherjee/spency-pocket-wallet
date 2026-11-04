@@ -1,5 +1,6 @@
 import { type Category, categoryLabel, FLEX } from "@/lib/data/category";
 import type { AppData } from "@/lib/data/types";
+import { addDays } from "@/lib/engine/dates";
 import { catchUp, type Summary } from "@/lib/engine/derive";
 import { findDuplicate, type MerchantMemory, recallEnvelope } from "@/lib/engine/inbox";
 import type { FormatMoney } from "@/lib/engine/money";
@@ -195,6 +196,8 @@ export function summaryPayload(
   const settlement = s.current.settlement;
   return {
     date: s.today,
+    // The plan's month may run payday to payday, so it can end on any day.
+    month_ends: addDays(s.today, s.daysLeftMonth - 1),
     safe_to_spend_today: money(s.safeToday),
     this_week: {
       status: STATUS_LABEL[s.status],

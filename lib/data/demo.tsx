@@ -3,7 +3,8 @@
 import { type ReactNode, useEffect, useMemo, useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { monthOf, todayIn } from "@/lib/engine/dates";
+import { todayIn } from "@/lib/engine/dates";
+import { isCurrentPlan } from "@/lib/engine/plan";
 import { seedData } from "@/lib/seed";
 import { applyTheme } from "@/lib/theme";
 import { SpencyContext } from "./context";
@@ -98,7 +99,7 @@ export function DemoProvider({ children, fallback }: { children: ReactNode; fall
   useEffect(() => {
     const d = useDemoStore.getState().data;
     // A reset leaves plan null on purpose (onboarding), so only a stale month regenerates.
-    if (ready && (!d || (d.plan && d.plan.month !== monthOf(todayIn(d.profile.timeZone))))) useDemoStore.getState().reset();
+    if (ready && (!d || (d.plan && !isCurrentPlan(d.plan, todayIn(d.profile.timeZone))))) useDemoStore.getState().reset();
   }, [ready]);
 
   useEffect(() => {

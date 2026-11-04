@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useMemo } from "react";
 import type { Summary } from "@/lib/engine/derive";
-import { monthOf, todayIn } from "@/lib/engine/dates";
+import { todayIn } from "@/lib/engine/dates";
+import { isCurrentPlan } from "@/lib/engine/plan";
 import { type SpencyData, summarize } from "@/lib/engine/derive";
 import { makeFormatters } from "@/lib/format";
 import { enginePlan } from "./plan";
@@ -40,7 +41,7 @@ export function useToday() {
 export function useHasCurrentPlan(): boolean {
   const { plan } = useAppData();
   const today = useToday();
-  return plan !== null && plan.month === monthOf(today);
+  return plan !== null && isCurrentPlan(plan, today);
 }
 
 // Derived values are cached per AppData snapshot (a new object after every change), so the many components that

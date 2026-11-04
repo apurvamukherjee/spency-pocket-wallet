@@ -46,6 +46,7 @@ export const planFromRow = (r: MonthPlanRow): StoredPlan => ({
   target: r.target,
   salary: r.salary_amount !== null && r.salary_date !== null ? { amount: r.salary_amount, date: r.salary_date } : null,
   weekStart: r.week_start,
+  startDay: r.start_day ?? 1,
   // Older rows (before the column existed) come back without it.
   unpaidBills: r.unpaid_bills ?? [],
   billFunds: r.bill_funds ?? {},
@@ -63,6 +64,7 @@ export function planToRow(p: Partial<PlanInput>): Update<"month_plans"> {
     out.salary_date = p.salary?.date ?? null;
   }
   if (p.weekStart !== undefined) out.week_start = p.weekStart;
+  if (p.startDay !== undefined) out.start_day = p.startDay;
   if (p.unpaidBills !== undefined) out.unpaid_bills = p.unpaidBills;
   if (p.billFunds !== undefined) out.bill_funds = p.billFunds;
   return out;
@@ -77,6 +79,7 @@ export const planToInsert = (p: PlanInput): Insert<"month_plans"> => ({
   salary_amount: p.salary?.amount ?? null,
   salary_date: p.salary?.date ?? null,
   week_start: p.weekStart,
+  start_day: p.startDay ?? 1,
   unpaid_bills: p.unpaidBills ?? [],
   bill_funds: p.billFunds ?? {},
 });

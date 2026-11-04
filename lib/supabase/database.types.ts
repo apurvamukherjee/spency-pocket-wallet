@@ -29,6 +29,7 @@ export type MonthPlanRow = {
   salary_amount: number | null;
   salary_date: string | null;
   week_start: number;
+  start_day: number;
   unpaid_bills: string[];
   bill_funds: Record<string, number>;
   created_at: string;
