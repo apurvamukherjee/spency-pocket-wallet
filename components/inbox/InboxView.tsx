@@ -6,6 +6,7 @@ import { findDuplicate } from "@/lib/engine/inbox";
 import type { Envelope, Txn } from "@/lib/engine/types";
 import { useUI } from "@/lib/ui";
 import { Icon } from "@/components/ui/Icon";
+import { accountLabel } from "./SourcePicker";
 import { SwipeCard } from "./SwipeCard";
 
 type PendingItem = { txn: Txn; duplicateOf: Txn | undefined };
@@ -94,7 +95,8 @@ function InboxList() {
 
 function TxnCard({ txn, duplicateOf, envelopes, today }: { txn: Txn; duplicateOf?: Txn; envelopes: Envelope[]; today: string }) {
   const edit = useUI((s) => s.edit);
-  const { commitments } = useAppData();
+  const { commitments, accounts } = useAppData();
+  const account = accountLabel(accounts, txn);
   const fmt = useFormat();
   return (
     <button type="button" onClick={() => edit(txn.id)} className="card block w-full p-4 text-left transition-colors hover:border-faint">
@@ -111,6 +113,7 @@ function TxnCard({ txn, duplicateOf, envelopes, today }: { txn: Txn; duplicateOf
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <span className="rounded-full bg-raised px-2.5 py-1 text-muted">{categoryLabel(envelopes, commitments, txn)}</span>
         {txn.wallet === "cash" && <span className="rounded-full bg-raised px-2.5 py-1 text-muted">Cash</span>}
+        {account && <span className="rounded-full bg-raised px-2.5 py-1 text-muted">{account}</span>}
         {txn.source === "claude" && (
           <span className="inline-flex items-center gap-1 text-faint">
             <Icon name="sparkle" size={12} />

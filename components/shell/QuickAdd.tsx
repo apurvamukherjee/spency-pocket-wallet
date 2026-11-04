@@ -4,11 +4,11 @@ import { useState } from "react";
 import { useActions, useAppData, useFormat, useToday } from "@/lib/data/context";
 import type { Category } from "@/lib/data/category";
 import { defaultEnvelopeId, recallEnvelope } from "@/lib/engine/inbox";
-import type { Wallet } from "@/lib/engine/types";
 import { useUI } from "@/lib/ui";
 import { CategoryPicker } from "@/components/inbox/CategoryPicker";
+import { type Source, SourcePicker } from "@/components/inbox/SourcePicker";
 import { instantFor, WhenField } from "@/components/inbox/WhenField";
-import { Segmented } from "@/components/ui/controls";
+import { Chip, Segmented } from "@/components/ui/controls";
 import { Sheet } from "@/components/ui/Sheet";
 
 export function QuickAdd() {
@@ -26,7 +26,7 @@ type Kind = "spend" | "in" | "withdraw";
 type InKind = "refund" | "spend" | "save";
 
 function QuickAddForm({ onDone }: { onDone: () => void }) {
-  const { envelopes, commitments, memory, profile } = useAppData();
+  const { envelopes, commitments, memory, profile, accounts } = useAppData();
   const { addTxn } = useActions();
   const fmt = useFormat();
   const today = useToday();
@@ -34,7 +34,13 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
   const [kind, setKind] = useState<Kind>("spend");
   const [amountText, setAmountText] = useState("");
   const [merchant, setMerchant] = useState("");
-  const [wallet, setWallet] = useState<Wallet>("bank");
+  const [source, setSource] = useState<Source>({ wallet: "bank", accountId: null });
+  // Moving money: from a bank account (null = main) to cash or another account.
+  const [moveFrom, setMoveFrom] = useState<string | null>(null);
+  const [moveTo, setMoveTo] = useState<string>("cash");
+  const several = accounts.length > 1;
+  const mainId = accounts[0]?.id ?? null;
+  const fromId = moveFrom ?? mainId;
   const [picked, setPicked] = useState<Category | null>(null);
   const [day, setDay] = useState(today);
   const [inKind, setInKind] = useState<InKind>("refund");
@@ -52,19 +58,40 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
     if (!amount) return;
     const occurredAt = instantFor(day, today, profile.timeZone);
     const name = merchant.trim();
+    const wallet = source.wallet;
+    const via = { wallet, accountId: wallet === "bank" ? source.accountId : null };
     if (kind === "withdraw") {
-      addTxn({ amount, wallet: "bank", kind: "transfer", merchant: "Cash withdrawal", envelopeId: null, occurredAt });
+      const toAccount = moveTo === "cash" ? null : moveTo;
+      const from = fromId === mainId ? null : fromId;
+      addTxn({
+        amount,
+        wallet: "bank",
+        kind: "transfer",
+        accountId: from,
+        toAccountId: toAccount,
+        merchant: toAccount ? `To ${accounts.find((a) => a.id === toAccount)?.name ?? "account"}` : "Cash withdrawal",
+        envelopeId: null,
+        occurredAt,
+      });
     } else if (kind === "spend") {
-      addTxn({ amount, wallet, merchant: name || "Quick spend", ...category, occurredAt });
+      addTxn({ amount, ...via, merchant: name || "Quick spend", ...category, occurredAt });
     } else if (inKind === "refund") {
       // A refund is negative spending: it goes back where the spend was counted.
-      addTxn({ amount, wallet, direction: "credit", merchant: name || "Refund", envelopeId: category.envelopeId, commitmentId: null, occurredAt });
+      addTxn({
+        amount,
+        ...via,
+        direction: "credit",
+        merchant: name || "Refund",
+        envelopeId: category.envelopeId,
+        commitmentId: null,
+        occurredAt,
+      });
     } else if (inKind === "spend") {
       // Extra money to use this month joins Flex, so safe-to-spend rises and the target stays put.
-      addTxn({ amount, wallet, direction: "credit", merchant: name || "Extra income", envelopeId: null, commitmentId: null, occurredAt });
+      addTxn({ amount, ...via, direction: "credit", merchant: name || "Extra income", envelopeId: null, commitmentId: null, occurredAt });
     } else {
       // Saved income isn't spending money; it lifts the month-end balance above the target.
-      addTxn({ amount, wallet, direction: "credit", kind: "income", merchant: name || "Extra income", envelopeId: null, occurredAt });
+      addTxn({ amount, ...via, direction: "credit", kind: "income", merchant: name || "Extra income", envelopeId: null, occurredAt });
     }
     onDone();
   }
@@ -78,7 +105,7 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
         options={[
           { value: "spend", label: "Spend" },
           { value: "in", label: "Money in" },
-          { value: "withdraw", label: "Withdraw" },
+          { value: "withdraw", label: several ? "Move" : "Withdraw" },
         ]}
       />
 
@@ -101,15 +128,7 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
         <>
           <input className="field" placeholder="Where? (optional)" value={merchant} onChange={(e) => setMerchant(e.target.value)} />
           <CategoryPicker envelopes={envelopes} bills={commitments} value={category} onChange={setPicked} />
-          <Segmented<Wallet>
-            label="Paid from"
-            value={wallet}
-            onChange={setWallet}
-            options={[
-              { value: "bank", label: "Bank / card" },
-              { value: "cash", label: "Cash" },
-            ]}
-          />
+          <SourcePicker accounts={accounts} label="Paid from" value={source} onChange={setSource} />
         </>
       ) : kind === "in" ? (
         <>
@@ -136,16 +155,44 @@ function QuickAddForm({ onDone }: { onDone: () => void }) {
                 : "Extra income. Kept out of your spending money, so you end the month above your target."}
             </p>
           )}
-          <Segmented<Wallet>
-            label="Received into"
-            value={wallet}
-            onChange={setWallet}
-            options={[
-              { value: "bank", label: "Bank / card" },
-              { value: "cash", label: "Cash" },
-            ]}
-          />
+          <SourcePicker accounts={accounts} label="Received into" value={source} onChange={setSource} />
         </>
+      ) : several ? (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted">From</p>
+            <div role="group" aria-label="From" className="flex flex-wrap gap-2">
+              {accounts.map((a) => (
+                <Chip
+                  key={a.id}
+                  active={fromId === a.id}
+                  onClick={() => {
+                    setMoveFrom(a.id);
+                    if (moveTo === a.id) setMoveTo("cash");
+                  }}
+                >
+                  {a.name}
+                </Chip>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted">To</p>
+            <div role="group" aria-label="To" className="flex flex-wrap gap-2">
+              <Chip active={moveTo === "cash"} onClick={() => setMoveTo("cash")}>
+                Cash
+              </Chip>
+              {accounts
+                .filter((a) => a.id !== fromId)
+                .map((a) => (
+                  <Chip key={a.id} active={moveTo === a.id} onClick={() => setMoveTo(a.id)}>
+                    {a.name}
+                  </Chip>
+                ))}
+            </div>
+          </div>
+          <p className="text-sm text-muted">Moving your own money isn&apos;t spending, so your budget stays the same.</p>
+        </div>
       ) : (
         <p className="text-sm text-muted">Moves money from your bank to cash. It isn&apos;t spending, so your budget stays the same.</p>
       )}

@@ -3,12 +3,12 @@
 import { useState } from "react";
 import { useActions, useAppData, useFormat, useProfile, useToday } from "@/lib/data/context";
 import { toLocalDate } from "@/lib/engine/dates";
-import type { Txn, Wallet } from "@/lib/engine/types";
+import type { Txn } from "@/lib/engine/types";
 import { useUI } from "@/lib/ui";
-import { Segmented } from "@/components/ui/controls";
 import { Sheet } from "@/components/ui/Sheet";
 import type { Category } from "@/lib/data/category";
 import { CategoryPicker } from "./CategoryPicker";
+import { type Source, SourcePicker } from "./SourcePicker";
 import { instantFor, WhenField } from "./WhenField";
 
 export function EditTxnSheet() {
@@ -23,7 +23,7 @@ export function EditTxnSheet() {
 }
 
 function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
-  const { envelopes, commitments } = useAppData();
+  const { envelopes, commitments, accounts } = useAppData();
   const { updateTxn, setStatus } = useActions();
   const fmt = useFormat();
   const today = useToday();
@@ -32,7 +32,7 @@ function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
   const [amountText, setAmountText] = useState(fmt.input(txn.amount));
   const [merchant, setMerchant] = useState(txn.merchant);
   const [category, setCategory] = useState<Category>({ envelopeId: txn.envelopeId, commitmentId: txn.commitmentId });
-  const [wallet, setWallet] = useState<Wallet>(txn.wallet);
+  const [source, setSource] = useState<Source>({ wallet: txn.wallet, accountId: txn.accountId ?? null });
   const [day, setDay] = useState(toLocalDate(txn.occurredAt, timeZone));
   const [confirmRemove, setConfirmRemove] = useState(false);
   const amount = fmt.parse(amountText);
@@ -46,7 +46,7 @@ function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
     updateTxn(txn.id, {
       amount,
       merchant: merchant.trim() || txn.merchant,
-      ...(spend ? { ...category, wallet } : {}),
+      ...(spend ? { ...category, wallet: source.wallet, accountId: source.wallet === "bank" ? source.accountId : null } : {}),
       ...(instant !== txn.occurredAt ? { occurredAt: instant } : {}),
     });
     if (status) setStatus([txn.id], status);
@@ -84,20 +84,19 @@ function EditForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
               <p className="text-xs text-faint">Future payments to {merchant || "this merchant"} will go here too.</p>
             )}
           </div>
-          <Segmented<Wallet>
-            label="Paid from"
-            value={wallet}
-            onChange={setWallet}
-            options={[
-              { value: "bank", label: "Bank / card" },
-              { value: "cash", label: "Cash" },
-            ]}
+          <SourcePicker
+            accounts={accounts}
+            label={txn.direction === "credit" ? "Received into" : "Paid from"}
+            value={source}
+            onChange={setSource}
           />
         </>
       ) : (
         <p className="text-sm text-muted">
           {txn.kind === "transfer"
-            ? "A cash withdrawal moves money from your bank to cash. It isn't spending, so it has no category."
+            ? txn.toAccountId
+              ? "A move between your own accounts. It isn't spending, so it has no category."
+              : "A cash withdrawal moves money from your bank to cash. It isn't spending, so it has no category."
             : "An adjustment lines Spency up with your real bank balance. It isn't tied to an envelope or bill."}
         </p>
       )}

@@ -4,10 +4,11 @@ import { useMemo, useState } from "react";
 import { useAppData, useFormat, useToday } from "@/lib/data/context";
 import { useUI } from "@/lib/ui";
 import { categoryLabel } from "@/lib/data/category";
+import { accountLabel } from "@/components/inbox/SourcePicker";
 
 /** Confirmed payments, newest first. Tap one to fix or remove it. */
 export function RecentActivity() {
-  const { txns, envelopes, commitments } = useAppData();
+  const { txns, envelopes, commitments, accounts } = useAppData();
   const fmt = useFormat();
   const today = useToday();
   const edit = useUI((s) => s.edit);
@@ -37,7 +38,8 @@ export function RecentActivity() {
                       <span className="block truncate text-[15px]">{t.merchant || label}</span>
                       <span className="block text-[13px] text-muted">
                         {label}
-                        {t.wallet === "cash" ? " · Cash" : ""} · {fmt.when(t.occurredAt, today)}
+                        {t.wallet === "cash" ? " · Cash" : ""}
+                        {accountLabel(accounts, t) ? ` · ${accountLabel(accounts, t)}` : ""} · {fmt.when(t.occurredAt, today)}
                       </span>
                     </span>
                     <span className={`shrink-0 text-[15px] tabular-nums ${t.direction === "credit" ? "text-ok" : ""}`}>
