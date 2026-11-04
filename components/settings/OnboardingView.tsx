@@ -217,7 +217,7 @@ export function OnboardingView() {
                   aria-label={`${r.name} per week`}
                   inputMode="decimal"
                   disabled={!r.on}
-                  className="w-16 bg-transparent text-right tabular-nums outline-none disabled:text-faint"
+                  className="w-20 bg-transparent text-right tabular-nums outline-none disabled:text-faint"
                   value={r.amount}
                   onChange={(e) => updateRow(i, { amount: e.target.value })}
                 />

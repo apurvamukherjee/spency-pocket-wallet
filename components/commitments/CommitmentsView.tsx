@@ -194,6 +194,7 @@ function CommitmentForm({ initial, today, onDone }: { initial: Commitment | null
           <button
             type="button"
             onClick={() => {
+              if (!confirm(`Delete ${initial.name}? Past payments stay, they just won't count as this bill.`)) return;
               deleteCommitment(initial.id);
               onDone();
             }}
