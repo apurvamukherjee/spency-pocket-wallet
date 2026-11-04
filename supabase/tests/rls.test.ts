@@ -119,6 +119,14 @@ describe("integrity", () => {
     });
   });
 
+  it("drops a deleted bill from the plan's not-paid-yet list", async () => {
+    await as(A, async () => {
+      await db.exec(`update month_plans set unpaid_bills = array['${BILL_A}']::uuid[]`);
+      await db.exec(`delete from commitments where id = '${BILL_A}'`);
+      expect(await count("select cardinality(unpaid_bills) from month_plans")).toBe(0);
+    });
+  });
+
   it("hard reset clears only the caller's data and keeps their profile", async () => {
     await as(A, async () => {
       for (const t of ["transactions", "merchant_memory", "reconcile_checks", "month_plans", "envelopes", "commitments"]) {
