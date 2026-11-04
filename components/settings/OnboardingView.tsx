@@ -13,7 +13,8 @@ import { Icon } from "@/components/ui/Icon";
 import { Switch } from "@/components/ui/controls";
 
 type EnvRow = { id: string; name: string; amount: string; on: boolean; locked: boolean; leftover: Envelope["leftover"] };
-type BillRow = { id: string; name: string; amount: string; day: string; frequency: Commitment["frequency"] };
+/** `original` is set for bills carried over from last month, so weekly and yearly ones keep their real dates. */
+type BillRow = { id: string; name: string; amount: string; day: string; frequency: Commitment["frequency"]; original?: Commitment };
 
 // Share of a week's spendable money each suggested envelope starts with; the rest stays in flex.
 const SUGGESTED: { name: string; share: number; on: boolean }[] = [
@@ -62,7 +63,14 @@ export function OnboardingView() {
       : null,
   );
   const [bills, setBills] = useState<BillRow[]>(
-    data.commitments.map((c) => ({ id: c.id, name: c.name, amount: fmt.input(c.amount), day: String(+c.nextDebit.slice(8)), frequency: c.frequency })),
+    data.commitments.map((c) => ({
+      id: c.id,
+      name: c.name,
+      amount: fmt.input(c.amount),
+      day: String(+c.nextDebit.slice(8)),
+      frequency: c.frequency,
+      original: c,
+    })),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +79,7 @@ export function OnboardingView() {
   const targetP = fmt.parse(target);
   const salaryP = fmt.parse(salary);
   const salaryDayN = Number(salaryDay);
+  const salaryDayOk = salaryDayN >= 1 && salaryDayN <= 31;
 
   const plan: PlanInput | null =
     bankP !== null && targetP !== null
@@ -81,7 +90,7 @@ export function OnboardingView() {
           // Preview only; finish() stamps the real moment the balance was entered.
           balanceAt: `${today}T12:00:00Z`,
           target: targetP,
-          salary: salaryP && salaryDayN >= 1 && salaryDayN <= 31 ? { amount: salaryP, date: nextOnDay(salaryDayN, today) } : null,
+          salary: salaryP && salaryDayOk ? { amount: salaryP, date: nextOnDay(salaryDayN, today) } : null,
           weekStart: data.plan?.weekStart ?? defaultWeekStart(profile.locale),
         }
       : null;
@@ -106,16 +115,25 @@ export function OnboardingView() {
     const p = fmt.parse(r.amount);
     return r.on && r.name.trim() && p !== null ? [{ id: r.id, name: r.name.trim(), weeklyLimit: p, locked: r.locked, leftover: r.leftover }] : [];
   });
+  const billOk = (b: BillRow) => {
+    const day = Number(b.day);
+    return b.name.trim() !== "" && !!fmt.parse(b.amount) && day >= 1 && day <= 31;
+  };
   const commitments: Commitment[] = bills.flatMap((b) => {
     const p = fmt.parse(b.amount);
-    const day = Number(b.day);
-    return b.name.trim() && p && day >= 1 && day <= 31
-      ? [{ id: b.id, name: b.name.trim(), amount: p, frequency: b.frequency, nextDebit: nextOnDay(day, today) }]
-      : [];
+    if (!billOk(b) || !p) return [];
+    const o = b.original;
+    // Only monthly bills are described by a day of the month; others keep their date unless the day was changed.
+    const keep = o && o.frequency !== "monthly" && b.day === String(+o.nextDebit.slice(8));
+    return [{ id: b.id, name: b.name.trim(), amount: p, frequency: b.frequency, nextDebit: keep ? o.nextDebit : nextOnDay(Number(b.day), today) }];
   });
+  // Rows the user started but didn't finish would otherwise be dropped without a word.
+  const halfBills = bills.filter((b) => (b.name.trim() || b.amount || b.day) && !billOk(b)).length;
+  const halfEnvs = rows.filter((r) => r.on && (!r.name.trim() || fmt.parse(r.amount) === null)).length;
+  const salaryNeedsDay = salary.trim() !== "" && !salaryDayOk;
 
   const flex = full ? flexBudget(full, envelopes, commitments) : 0;
-  const canNext = step > 0 || (plan !== null && canSpend >= 0);
+  const canNext = step === 0 ? plan !== null && canSpend >= 0 && !salaryNeedsDay : step === 1 ? halfEnvs === 0 : true;
 
   async function finish() {
     if (!plan) return;
@@ -170,6 +188,7 @@ export function OnboardingView() {
               />
             </label>
           </div>
+          {salaryNeedsDay && <p className="text-sm text-warn">Add the day your pay arrives so Spency can count it.</p>}
           {plan && (
             <p className={`text-sm ${canSpend >= 0 ? "text-muted" : "text-warn"}`}>
               {canSpend >= 0
@@ -214,6 +233,11 @@ export function OnboardingView() {
             <Icon name="plus" size={16} />
             Another envelope
           </button>
+          {halfEnvs > 0 && (
+            <p className="text-sm text-warn">
+              Give every envelope that&apos;s switched on a name and a weekly amount, or switch it off.
+            </p>
+          )}
         </div>
       )}
 
@@ -221,10 +245,19 @@ export function OnboardingView() {
         <div className="space-y-4">
           <p className="text-sm text-muted">Rent, subscriptions, loans. These are set aside first.</p>
           {bills.map((b, i) => (
-            <div key={b.id} className="grid grid-cols-[1fr_6rem_4rem_auto] items-center gap-2">
+            <div key={b.id} className="grid grid-cols-[1fr_5.5rem_3.75rem_auto] items-center gap-2">
               <input aria-label="Bill name" className="field" placeholder="Name" value={b.name} onChange={(e) => updateBill(i, { name: e.target.value })} />
               <input aria-label="Amount" className="field tabular-nums" inputMode="decimal" placeholder={fmt.symbol} value={b.amount} onChange={(e) => updateBill(i, { amount: e.target.value })} />
-              <input aria-label="Day of month" className="field" inputMode="numeric" placeholder="Day" value={b.day} onChange={(e) => updateBill(i, { day: e.target.value })} />
+              <input
+                aria-label={b.frequency === "monthly" ? "Day of month" : `Day of month (${b.frequency} bill)`}
+                title={b.frequency === "monthly" ? undefined : `${b.frequency === "weekly" ? "Weekly" : "Yearly"} bill: keeps its date unless you change the day`}
+                className="field tabular-nums"
+                inputMode="numeric"
+                maxLength={2}
+                placeholder="Day"
+                value={b.day}
+                onChange={(e) => updateBill(i, { day: e.target.value.replace(/\D/g, "") })}
+              />
               <button type="button" aria-label="Remove bill" onClick={() => setBills(bills.filter((_, j) => j !== i))} className="p-2 text-faint hover:text-fg">
                 <Icon name="x" size={16} />
               </button>
@@ -242,6 +275,12 @@ export function OnboardingView() {
               </button>
             ))}
           </div>
+          {halfBills > 0 && (
+            <p className="text-sm text-warn">
+              {halfBills === 1 ? "One bill needs" : `${halfBills} bills need`} a name, an amount and a day (1–31) before you start, or
+              remove {halfBills === 1 ? "it" : "them"}.
+            </p>
+          )}
           {plan && (
             <p className={`pt-2 text-sm ${flex >= 0 ? "text-muted" : "text-warn"}`}>
               {flex >= 0
@@ -269,7 +308,7 @@ export function OnboardingView() {
             Continue
           </button>
         ) : (
-          <button type="button" disabled={!plan || saving} onClick={finish} className="btn btn-primary flex-1">
+          <button type="button" disabled={!plan || saving || halfBills > 0 || halfEnvs > 0} onClick={finish} className="btn btn-primary flex-1">
             {saving ? "Saving…" : "Start my month"}
           </button>
         )}
