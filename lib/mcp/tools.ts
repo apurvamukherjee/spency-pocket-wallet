@@ -120,7 +120,7 @@ export function registerTools(server: McpServer) {
     },
     guard(async (_args: Record<string, never>, s) => ({
       currency: s.data.profile.currency,
-      ...summaryPayload(needsPlan(s), s.data, s.money),
+      ...summaryPayload(needsPlan(s), s.data, s.money, s.unit),
     })),
   );
 

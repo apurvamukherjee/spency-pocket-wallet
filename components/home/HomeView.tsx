@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { useData, useFormat, useSummary } from "@/lib/data/context";
-import { balanceSeries } from "@/lib/engine/derive";
+import { balanceSeries, catchUp } from "@/lib/engine/derive";
+import { unitOf } from "@/lib/engine/money";
 import { dueWhen } from "@/lib/engine/dates";
 import { nextBill, planWindow } from "@/lib/engine/plan";
 import { describeSettlement } from "@/lib/engine/settle";
@@ -22,6 +23,7 @@ export function HomeView() {
   const series = useMemo(() => balanceSeries(data.plan, data.txns, s.today), [data.plan, data.txns, s.today]);
   const delta = s.projected - s.target;
   const next = nextBill(data.commitments, s.today);
+  const back = catchUp(s, unitOf(data.plan.currency));
   const nextLine = next && `Next: ${next.commitment.name}, ${dueWhen(s.today, next.date)} (${fmt.shortDay(next.date)})`;
 
   return (
@@ -56,6 +58,13 @@ export function HomeView() {
           <p className="max-w-prose text-[15px] leading-relaxed text-muted">
             {describeSettlement(s.current.settlement, { live: !s.current.final, target: s.target, projected: s.projected, fmt: fmt.money })}
           </p>
+          {back && (
+            <p className="max-w-prose rounded-xl bg-raised px-3.5 py-2.5 text-sm leading-relaxed">
+              {back.kind === "per_day"
+                ? `To end on ${fmt.money(s.target)}: spend about ${fmt.money(back.perDay)} a day less than planned until ${fmt.shortDay(win.end)}.`
+                : `Even with no more spending this month you'd end ${fmt.money(back.shortBy)} short of ${fmt.money(s.target)}. That's okay: carry it into next month's plan with a slightly lower target.`}
+            </p>
+          )}
         </div>
       </section>
 

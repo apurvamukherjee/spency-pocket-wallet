@@ -1,6 +1,6 @@
 import { type Category, categoryLabel, FLEX } from "@/lib/data/category";
 import type { AppData } from "@/lib/data/types";
-import type { Summary } from "@/lib/engine/derive";
+import { catchUp, type Summary } from "@/lib/engine/derive";
 import { findDuplicate, type MerchantMemory, recallEnvelope } from "@/lib/engine/inbox";
 import type { FormatMoney } from "@/lib/engine/money";
 import { coverLine, describeSettlement, type SettlementStatus } from "@/lib/engine/settle";
@@ -172,8 +172,26 @@ const STATUS_LABEL: Record<SettlementStatus, string> = {
   target_hit: "Below target",
 };
 
+/** The concrete way back to target, phrased for Claude to pass on kindly. Empty when on track. */
+function catchUpPayload(s: Summary, unit: number, money: FormatMoney): { to_get_back_on_track?: string } {
+  const c = catchUp(s, unit);
+  if (!c) return {};
+  return {
+    to_get_back_on_track:
+      c.kind === "per_day"
+        ? `Spend about ${money(c.perDay)} a day less than planned for the rest of the month to end on ${money(s.target)}.`
+        : `The gap can't close this month: even with no more spending the user ends ${money(c.shortBy)} short. Suggest a slightly lower target next month.`,
+  };
+}
+
 /** What Claude needs to answer "can I afford this?" and to map screenshots to envelope names. */
-export function summaryPayload(s: Summary, d: Pick<AppData, "envelopes" | "txns" | "commitments">, money: FormatMoney) {
+export function summaryPayload(
+  s: Summary,
+  d: Pick<AppData, "envelopes" | "txns" | "commitments">,
+  money: FormatMoney,
+  /** Minor units per major unit of the plan currency (unitOf), for rounding the catch-up figure. */
+  unit: number,
+) {
   const settlement = s.current.settlement;
   return {
     date: s.today,
@@ -198,6 +216,7 @@ export function summaryPayload(s: Summary, d: Pick<AppData, "envelopes" | "txns"
     projected_month_end: money(s.projected),
     target_month_end: money(s.target),
     on_track_for_target: s.projected >= s.target,
+    ...catchUpPayload(s, unit, money),
     bonus_saved_this_month: money(s.bonusSaved),
     bank_balance: money(s.bank),
     cash_in_hand: money(s.cash),
