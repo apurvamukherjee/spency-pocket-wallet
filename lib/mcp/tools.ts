@@ -6,7 +6,8 @@ import * as rows from "@/lib/data/rows";
 import type { AppData, PlanInput } from "@/lib/data/types";
 import { addDays, dayInPeriod, toLocalDate, todayIn } from "@/lib/engine/dates";
 import { isCurrentPlan, planPeriod } from "@/lib/engine/plan";
-import { accountBalances, billStatus, summarize } from "@/lib/engine/derive";
+import { accountBalances, billStatus, type SpencyData, summarize } from "@/lib/engine/derive";
+import { savings, whatIf } from "@/lib/engine/savings";
 import { defaultEnvelopeId, normalizeMerchant } from "@/lib/engine/inbox";
 import { categoryLabel } from "@/lib/data/category";
 import { moneyFormatter, unitOf } from "@/lib/engine/money";
@@ -38,6 +39,8 @@ Logging payments from screenshots (UPI, card, bank or wallet apps):
 Past days and corrections: payments from earlier days go through add_transactions with their real date. To fix something already in Spency (wrong amount, category, date, or a payment that shouldn't be there), call list_transactions to find its id, then update_transaction or remove_transaction. Bills, envelopes and the month plan can be changed with update_commitment, remove_commitment, update_envelope, remove_envelope and update_plan. When the user says a bill has or hasn't gone out ("Netflix hasn't gone out yet", "rent is paid"), use set_bill_paid. Say what you're about to change and get a yes before removing anything or changing balances. Only the user can confirm pending payments, in the app.
 
 Questions like "can I afford a 1,500 dinner?": call get_summary and compare with safe_to_spend_today (today's comfortable amount) and flex_left (room for unplanned spends). Be honest and kind; never guilt the user. If they're heading below target, pass on to_get_back_on_track. Money in set_aside_for_yearly_bills isn't spendable.
+
+Questions like "how much am I saving?" or "what if I cut groceries by 100 a week?": call get_savings (with cut for what-ifs).
 
 Amounts are in the user's currency in normal units (249.50), never in cents or paise.`;
 
@@ -85,11 +88,33 @@ function guard<A>(run: (args: A, s: Session) => Promise<unknown>) {
 const fallbackEnvelope = (s: Session) => defaultEnvelopeId(s.data.envelopes, s.data.profile.defaultEnvelopeId);
 
 function needsPlan(s: Session) {
-  const { plan, profile } = s.data;
+  const { plan } = s.data;
   if (!plan || !isCurrentPlan(plan, s.today)) {
     throw new ToolInputError("The user hasn't set up this month's plan yet. Ask them to open Spency once to set their balance and target.");
   }
-  return summarize({ ...s.data, plan: enginePlan(plan, profile) }, s.today);
+  return summarize(engineData(s), s.today);
+}
+
+function engineData(s: Session): SpencyData {
+  const { plan, profile } = s.data;
+  if (!plan) throw new ToolInputError("The user hasn't set up this month's plan yet.");
+  return { ...s.data, plan: enginePlan(plan, profile) };
+}
+
+function savingsPayload(s: Session, detail: boolean) {
+  const sv = savings(engineData(s), s.today);
+  const m = (v: number) => s.money(v, { signed: true });
+  return {
+    saved_vs_plan_so_far: m(sv.total.saved),
+    per_day: m(sv.perDay),
+    per_week: m(sv.perWeek),
+    at_this_pace_by_month_end: m(sv.atThisPace),
+    by_category: sv.lines.map((l) => ({ name: l.name, saved: m(l.saved), per_week: m(l.perWeek), spent: s.money(l.spent), planned: s.money(l.planned) })),
+    ...(detail && {
+      weeks: sv.weeks.map((w) => ({ from: w.start, days: w.days, saved: m(w.saved), spent: s.money(w.spent), planned: s.money(w.planned) })),
+      days: sv.days.map((d) => ({ date: d.date, saved: m(d.saved), spent: s.money(d.spent) })),
+    }),
+  };
 }
 
 /** Per-account balances for get_summary, only when the user has more than one account. */
@@ -137,7 +162,37 @@ export function registerTools(server: McpServer) {
       currency: s.data.profile.currency,
       ...summaryPayload(needsPlan(s), s.data, s.money, s.unit),
       ...accountsPayload(s),
+      savings: savingsPayload(s, false),
     })),
+  );
+
+  server.registerTool(
+    "get_savings",
+    {
+      title: "Savings and what-if",
+      description:
+        "How much the user has saved compared with their plan this month: day by day, week by week and per category (best saver first). Pass cut (and per) to answer \"what if I spent 100 a week less?\": returns the extra kept this month, the new projected month-end vs target, and the yearly equivalent. Savings vs plan only become real at month end; say so kindly.",
+      inputSchema: z.object({
+        cut: amount.optional().describe("Amount to spend less, normal units"),
+        per: z.enum(["day", "week"]).optional().describe("Default week"),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    guard(async (args: { cut?: number | string; per?: "day" | "week" }, s) => {
+      const summary = needsPlan(s);
+      const out: Record<string, unknown> = savingsPayload(s, true);
+      if (args.cut !== undefined) {
+        const cut = toMinor(args.cut, s.unit);
+        const w = whatIf(summary, args.per === "day" ? cut * 7 : cut, s.unit);
+        out.what_if = {
+          extra_kept_this_month: s.money(w.thisMonth),
+          projected_month_end: s.money(w.projected),
+          vs_target: s.money(w.aboveTarget, { signed: true }),
+          over_a_year: s.money(w.perYear),
+        };
+      }
+      return out;
+    }),
   );
 
   server.registerTool(

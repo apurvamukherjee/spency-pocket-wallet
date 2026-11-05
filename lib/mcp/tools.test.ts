@@ -24,6 +24,7 @@ it("advertises every Spency tool with a JSON input schema", async () => {
   expect(tools.map((t) => t.name).sort()).toEqual([
     "add_commitment",
     "add_transactions",
+    "get_savings",
     "get_summary",
     "list_transactions",
     "log_cash",

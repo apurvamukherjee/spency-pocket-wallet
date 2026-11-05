@@ -5,6 +5,7 @@ All notable changes to Spency are documented here. The format follows [Keep a Ch
 ## [Unreleased]
 
 ### Added
+- Savings tab: saved compared with plan so far, per day and per week, at-this-pace month-end, a day/week chart, categories ranked by what they saved, ways to save, and a what-if calculator. Claude gets `get_savings` (with a what-if) and a savings block in `get_summary`.
 - A one-minute film with captions and an original soundtrack (`docs/spency-film.mp4`, scripts in `docs/film/`), new screenshots of every screen, and a rewritten README that reflects the current state of the project.
 - Payday-to-payday months: a month can start on any day (say the 25th, when pay lands) and run to the day before the next. Onboarding asks and shows the dates; Settings shows them. Calendar months are unchanged. Needs the `start_day` migration.
 - Several bank accounts: name them in Settings, pick the account on each payment, move money between them (not spending), enter each balance in onboarding and the plan, and reconcile each against its bank app. Budgets and the target use the total. Claude can file payments under an account and sees each balance. Needs the `accounts` migration.

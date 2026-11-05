@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { type ReactNode, useMemo } from "react";
 import { useData, useFormat, useSummary } from "@/lib/data/context";
 import { balanceSeries, catchUp } from "@/lib/engine/derive";
 import { unitOf } from "@/lib/engine/money";
@@ -89,7 +89,7 @@ export function HomeView() {
         <dl className="mt-5 grid grid-cols-3 gap-3 border-t border-line pt-4 text-sm">
           <Stat label="Flex left" value={fmt.money(Math.max(0, s.flexLeft))} />
           <Stat label="Bills due" value={fmt.money(s.commitmentsRemaining)} note={nextLine} />
-          <Stat label="Bonus saved" value={fmt.money(s.bonusSaved)} />
+          <Stat label="Bonus saved" value={fmt.money(s.bonusSaved)} note={<Link href="/savings" className="underline underline-offset-4 hover:text-fg">See savings</Link>} />
         </dl>
         {s.billSavings > 0 && (
           <p className="mt-3 text-xs text-muted">
@@ -126,7 +126,7 @@ export function HomeView() {
   );
 }
 
-function Stat({ label, value, note }: { label: string; value: string; note?: string | null }) {
+function Stat({ label, value, note }: { label: string; value: string; note?: ReactNode }) {
   return (
     <div>
       <dt className="text-muted">{label}</dt>

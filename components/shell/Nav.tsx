@@ -12,6 +12,7 @@ const NAV: { href: string; label: string; icon: IconName; mobile: boolean }[] = 
   { href: "/inbox", label: "Inbox", icon: "inbox", mobile: true },
   { href: "/envelopes", label: "Envelopes", icon: "layers", mobile: true },
   { href: "/commitments", label: "Bills", icon: "receipt", mobile: true },
+  { href: "/savings", label: "Savings", icon: "trend", mobile: false },
   { href: "/reconcile", label: "Reconcile", icon: "scale", mobile: false },
   { href: "/settings", label: "Settings", icon: "gear", mobile: false },
 ];

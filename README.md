@@ -81,6 +81,9 @@ You tell Spency your balance today and the balance you want at month end. It set
 - **Overdrawn?** Balances and targets can be negative, so you can plan your way out.
 - **Bills you can tick off**, payments you can date (today, yesterday or any earlier day), and **rebalance suggestions** when one envelope keeps running over while another stays under.
 
+**See what you're saving**
+- **Savings tab**: what you've kept compared with your plan, day by day and week by week, which categories save the most, and a calculator: "spend 100 a week less" shows the extra this month, your new month end and the yearly total.
+
 **Honest by design**
 - **Daily reconcile** against each bank app, with a streak; gaps become adjustments on the right account.
 - **Private**: Spency never asks for bank logins. It only knows what you or Claude tell it.
@@ -105,6 +108,7 @@ Spency runs a remote [MCP](https://modelcontextprotocol.io) server at `/api/mcp`
 | Tool | What Claude can do |
 |---|---|
 | `get_summary` | Safe to spend today, envelopes, flex, bills, yearly-bill savings, each bank account, projected month end, and how to get back on track. Answers "can I afford this?" |
+| `get_savings` | Saved vs plan by day, week and category, plus a what-if: "what if I spent 100 a week less?" |
 | `add_transactions` | Send payments read from screenshots to your Inbox as pending. Applies merchant memory, skips duplicates, files refunds back into their envelope, and takes the bank account when you have several. |
 | `list_transactions` | Look up payments by date, status or category. |
 | `log_cash` | Log a cash spend or a withdrawal (pending, like everything Claude adds). |
@@ -182,6 +186,7 @@ Everything shown is derived from the month plan plus confirmed transactions, in 
 - **Yearly bills** set aside `(amount − saved) / months until due` each month, rounded up; the savings carry into the next month.
 - **Envelope allocation** is prorated by day: `weekly limit / 7 × days of each week inside the month`, rounded to a whole unit of your currency.
 - `projected month end = money now + pay still due − bills still due − yearly-bill savings held − envelope money left − unused flex`. Spend exactly to plan and this equals your target.
+- **Savings**: each day's plan is the week's prorated envelope allocation spread over its days plus an even share of flex; `saved = planned − spent`. A what-if cut of `c` a week adds `c / 7 × days left` to projected month end.
 - **Bank accounts** split the bank total; the main account holds whatever the others don't, so they always add up.
 
 ## Architecture
